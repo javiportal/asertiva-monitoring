@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:16
+    container_name: asertiva-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build: ./services/api
+    container_name: asertiva-api
+    depends_on:
+      - db
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  ai-filter:
+    build: ./services/ai-filter
+    container_name: asertiva-ai-filter
+    env_file:
+      - .env
+    depends_on:
+      - db
+    ports:
+      - "8100:8100"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload
+
+  ingestor:
+    build: ./services/ingestor
+    container_name: asertiva-ingestor
+    env_file:
+      - .env
+    depends_on:
+      - db
+    command: python -m app.main
+
+  filter-worker:
+    build: ./services/filter-worker
+    container_name: asertiva-filter-worker
+    depends_on:
+      - db
+      - ai-filter
+    env_file:
+      - .env
+    command: python -m app.main
+
+  frontend:
+    build: ./frontend
+    container_name: asertiva-frontend
+    env_file:
+      - .env
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    command: npm run dev
+
+volumes:
+  db_data:

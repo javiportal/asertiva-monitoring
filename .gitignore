@@ -1,0 +1,15 @@
+# Archivos sensibles
+.env
+.env.*
+
+# Archivos de sistema macOS
+.DS_Store
+**/.DS_Store
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Python
+__pycache__/
+*.pyc
