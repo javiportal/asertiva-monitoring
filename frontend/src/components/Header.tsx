@@ -23,7 +23,7 @@ export default function Header() {
                 {/* Logo & Brand */}
                 <div className="flex items-center gap-3">
                     <img
-                        src="/logo.png"
+                        src="/logo-asertiva.jpg"
                         alt="Asertiva Logo"
                         style={{ height: '32px', width: 'auto' }}
                         onError={(e) => {
@@ -38,7 +38,7 @@ export default function Header() {
                             color: 'white',
                             margin: 0,
                         }}>
-                            Asertiva <span style={{ color: '#E5E7EB', fontWeight: 400 }}>Risk Monitor</span>
+                            Asertiva <span style={{ color: '#E5E7EB', fontWeight: 400 }}>Dashboard </span>
                         </h1>
                     </div>
                 </div>
