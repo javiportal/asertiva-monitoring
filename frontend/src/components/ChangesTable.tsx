@@ -117,11 +117,13 @@ export default function ChangesTable({
                                 <tr
                                     key={change.id}
                                     onClick={() => onSelectChange(change)}
+                                    className={selectedChangeId === change.id ? 'selected' : ''}
                                     style={{
                                         borderBottom: '1px solid var(--border-light)',
                                         cursor: 'pointer',
                                         transition: 'all 150ms',
-                                        backgroundColor: isSelected ? 'var(--gray-50)' : 'white',
+                                        backgroundColor: isSelected ? 'var(--blue-light)' : 'transparent',
+                                        opacity: change.status === 'DISCARDED' ? 0.5 : 1,
                                     }}
                                     onMouseEnter={(e) => {
                                         if (!isSelected) {

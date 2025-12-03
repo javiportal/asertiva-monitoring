@@ -1,8 +1,8 @@
 import { Calendar } from 'lucide-react';
 
 type SubHeaderProps = {
-    activeView: 'all' | 'important' | 'pending';
-    onViewChange: (view: 'all' | 'important' | 'pending') => void;
+    activeView: 'new' | 'pending' | 'validated' | 'history';
+    onViewChange: (view: 'new' | 'pending' | 'validated' | 'history') => void;
     dateRange: string;
     onDateRangeChange: (range: string) => void;
 };
@@ -59,8 +59,8 @@ export default function SubHeader({
                         >
                             <button
                                 role="tab"
-                                aria-selected={activeView === 'all'}
-                                onClick={() => onViewChange('all')}
+                                aria-selected={activeView === 'new'}
+                                onClick={() => onViewChange('new')}
                                 style={{
                                     padding: 'var(--spacing-2) var(--spacing-4)',
                                     fontSize: 'var(--font-size-sm)',
@@ -69,29 +69,11 @@ export default function SubHeader({
                                     borderRadius: 'var(--radius-sm)',
                                     cursor: 'pointer',
                                     transition: 'all 200ms',
-                                    backgroundColor: activeView === 'all' ? 'var(--blue-night)' : 'transparent',
-                                    color: activeView === 'all' ? 'white' : 'var(--text-secondary)',
+                                    backgroundColor: activeView === 'new' ? 'var(--blue-night)' : 'transparent',
+                                    color: activeView === 'new' ? 'white' : 'var(--text-secondary)',
                                 }}
                             >
-                                Todos
-                            </button>
-                            <button
-                                role="tab"
-                                aria-selected={activeView === 'important'}
-                                onClick={() => onViewChange('important')}
-                                style={{
-                                    padding: 'var(--spacing-2) var(--spacing-4)',
-                                    fontSize: 'var(--font-size-sm)',
-                                    fontWeight: 500,
-                                    border: 'none',
-                                    borderRadius: 'var(--radius-sm)',
-                                    cursor: 'pointer',
-                                    transition: 'all 200ms',
-                                    backgroundColor: activeView === 'important' ? 'var(--blue-night)' : 'transparent',
-                                    color: activeView === 'important' ? 'white' : 'var(--text-secondary)',
-                                }}
-                            >
-                                Solo importantes
+                                Nuevos
                             </button>
                             <button
                                 role="tab"
@@ -110,6 +92,42 @@ export default function SubHeader({
                                 }}
                             >
                                 Pendientes
+                            </button>
+                            <button
+                                role="tab"
+                                aria-selected={activeView === 'validated'}
+                                onClick={() => onViewChange('validated')}
+                                style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    fontSize: 'var(--font-size-sm)',
+                                    fontWeight: 500,
+                                    border: 'none',
+                                    borderRadius: 'var(--radius-sm)',
+                                    cursor: 'pointer',
+                                    transition: 'all 200ms',
+                                    backgroundColor: activeView === 'validated' ? 'var(--blue-night)' : 'transparent',
+                                    color: activeView === 'validated' ? 'white' : 'var(--text-secondary)',
+                                }}
+                            >
+                                Validados
+                            </button>
+                            <button
+                                role="tab"
+                                aria-selected={activeView === 'history'}
+                                onClick={() => onViewChange('history')}
+                                style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    fontSize: 'var(--font-size-sm)',
+                                    fontWeight: 500,
+                                    border: 'none',
+                                    borderRadius: 'var(--radius-sm)',
+                                    cursor: 'pointer',
+                                    transition: 'all 200ms',
+                                    backgroundColor: activeView === 'history' ? 'var(--blue-night)' : 'transparent',
+                                    color: activeView === 'history' ? 'white' : 'var(--text-secondary)',
+                                }}
+                            >
+                                Historial
                             </button>
                         </div>
 

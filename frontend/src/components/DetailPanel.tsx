@@ -1,18 +1,18 @@
-import { X, ExternalLink, CheckCircle, XCircle, Calendar, Tag } from 'lucide-react';
+import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw } from 'lucide-react';
 import { type Change } from './ChangesTable';
 
 type DetailPanelProps = {
     change: Change | null;
     onClose: () => void;
-    onPublish?: (change: Change) => void;
-    onDiscard?: (change: Change) => void;
+    onValidate?: (change: Change) => void;
+    onMoveToPending?: (change: Change) => void;
 };
 
 export default function DetailPanel({
     change,
     onClose,
-    onPublish,
-    onDiscard
+    onValidate,
+    onMoveToPending
 }: DetailPanelProps) {
     if (!change) return null;
 
@@ -235,22 +235,32 @@ export default function DetailPanel({
                     bottom: 0,
                 }}>
                     <div className="flex gap-3" style={{ flexWrap: 'wrap' }}>
-                        <button
-                            onClick={() => onPublish?.(change)}
-                            className="btn btn-primary"
-                            style={{ flex: 1, minWidth: '180px' }}
-                        >
-                            <CheckCircle size={18} />
-                            Marcar como publicado
-                        </button>
-                        <button
-                            onClick={() => onDiscard?.(change)}
-                            className="btn btn-outline"
-                            style={{ flex: 1, minWidth: '140px' }}
-                        >
-                            <XCircle size={18} />
-                            Descartar
-                        </button>
+                        {/* Lógica nueva:
+                            - Si está en PENDING o FILTERED: muestra "Marcar como revisado" → VALIDATED
+                            - Si está en VALIDATED o PUBLISHED: muestra "Cambiar a pendientes" → PENDING
+                        */}
+
+                        {(change.status === 'PENDING' || change.status === 'FILTERED') && (
+                            <button
+                                onClick={() => onValidate?.(change)}
+                                className="btn btn-primary"
+                                style={{ flex: 1, minWidth: '180px' }}
+                            >
+                                <CheckCircle size={18} />
+                                Marcar como revisado
+                            </button>
+                        )}
+
+                        {(change.status === 'VALIDATED' || change.status === 'PUBLISHED') && (
+                            <button
+                                onClick={() => onMoveToPending?.(change)}
+                                className="btn btn-outline"
+                                style={{ flex: 1, minWidth: '180px', borderColor: 'var(--blue-night)', color: 'var(--blue-night)' }}
+                            >
+                                <RotateCcw size={18} />
+                                Cambiar a pendientes
+                            </button>
+                        )}
                     </div>
 
                     {change.url && (
