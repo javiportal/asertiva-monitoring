@@ -5,7 +5,17 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3000,
-    host: true, // importante para que funcione dentro de Docker
+    port: 3002,      // usamos 3002 para que no choque con nada
+    host: true,      // accesible desde la red local / Docker
+    allowedHosts: true, // permite que ngrok acceda
+
+    // 🔁 Proxy: todo lo que empiece con /api va al backend en :8000
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''), // /api/x -> /x
+      },
+    },
   },
 })

@@ -22,28 +22,32 @@ type ToastMessage = {
   type: "success" | "error" | "info" | "warning";
 };
 
-const API_BASE = "http://localhost:8000";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+
 
 function App() {
-  // Data State
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
   const [changes, setChanges] = useState<Change[]>([]);
   const [summary, setSummary] = useState<SummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter State
   const [searchQuery, setSearchQuery] = useState("");
   const [importanceFilter, setImportanceFilter] = useState<
     ("IMPORTANT" | "NOT_IMPORTANT")[]
   >([]);
-  const [activeView, setActiveView] = useState<"new" | "pending" | "validated" | "history">(
-    "pending"
-  );
+  const [activeView, setActiveView] = useState<
+    "new" | "pending" | "validated" | "history"
+  >("pending");
   const [dateRange, setDateRange] = useState("30");
 
-  // UI State
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  console.log("API_BASE en runtime:", API_BASE);
 
   // ---------------------------------------------------------------------------
   // Toast management
@@ -69,7 +73,7 @@ function App() {
       setError(null);
 
       const [changesRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/wachet-changes`), // <- sin filtros, devuelve TODOS
+        fetch(`${API_BASE}/wachet-changes`),
         fetch(`${API_BASE}/wachet-changes/summary`),
       ]);
 
@@ -77,8 +81,29 @@ function App() {
         throw new Error("Error al cargar datos de la API");
       }
 
-      const changesJson = await changesRes.json();
-      const summaryJson = await summaryRes.json();
+      const [changesText, summaryText] = await Promise.all([
+        changesRes.text(),
+        summaryRes.text(),
+      ]);
+
+      console.log("RAW /wachet-changes:", changesText.slice(0, 300));
+      console.log(
+        "RAW /wachet-changes/summary:",
+        summaryText.slice(0, 300)
+      );
+
+      let changesJson: any;
+      let summaryJson: any;
+
+      try {
+        changesJson = JSON.parse(changesText);
+        summaryJson = JSON.parse(summaryText);
+      } catch (parseErr) {
+        console.error("Error parseando JSON de la API:", parseErr);
+        throw new Error(
+          "La API respondió algo que no es JSON válido. Revisa que el backend en 8000 sea FastAPI."
+        );
+      }
 
       setChanges(changesJson.items ?? []);
       setSummary(summaryJson.items ?? []);
@@ -97,18 +122,18 @@ function App() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Calculate metrics
+  // Metrics
   // ---------------------------------------------------------------------------
   const totalImportant = summary
     .filter((s) => s.importance === "IMPORTANT")
     .reduce((acc, s) => acc + s.total, 0);
 
   const pendingCount = changes.filter(
-    (c) => c.status === "PENDING" || c.status === "FILTERED" // pendientes = no validados
+    (c) => c.status === "PENDING" || c.status === "FILTERED"
   ).length;
 
   const validatedCount = changes.filter(
-    (c) => c.status === "VALIDATED" || c.status === "PUBLISHED" // validados
+    (c) => c.status === "VALIDATED" || c.status === "PUBLISHED"
   ).length;
 
   const totalAnalyzed = changes.length;
@@ -119,28 +144,28 @@ function App() {
   const filteredChanges = useMemo(() => {
     let result = changes;
 
-    // 1. Aplicar filtro de vista (tabs)
+    // Tabs
     if (activeView === "new") {
-      // Solo nuevos (status = NEW)
       result = result.filter((c) => c.status === "NEW");
     } else if (activeView === "pending") {
-      // Solo pendientes (status = PENDING o FILTERED para compatibilidad)
-      result = result.filter((c) => c.status === "PENDING" || c.status === "FILTERED");
+      result = result.filter(
+        (c) => c.status === "PENDING" || c.status === "FILTERED"
+      );
     } else if (activeView === "validated") {
-      // Solo validados (status = VALIDATED o PUBLISHED para compatibilidad)
-      result = result.filter((c) => c.status === "VALIDATED" || c.status === "PUBLISHED");
+      result = result.filter(
+        (c) => c.status === "VALIDATED" || c.status === "PUBLISHED"
+      );
     }
-    // Si activeView === "history", NO filtramos por status (muestra todos)
+    // history => muestra todos
 
-    // 2. Aplicar filtro de importancia del sidebar (checkboxes)
-    // Se aplica en TODAS las vistas
+    // Importancia
     if (importanceFilter.length > 0) {
       result = result.filter((c) =>
         importanceFilter.includes(c.importance as any)
       );
     }
 
-    // 3. Aplicar búsqueda por texto
+    // Búsqueda
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((c) => {
@@ -180,11 +205,7 @@ function App() {
       }
 
       showToast(`"${change.title}" marcado como revisado`, "success");
-
-      // Cerrar el panel de detalle
       setSelectedChange(null);
-
-      // Recargar datos para reflejar el cambio
       await fetchData();
     } catch (err) {
       console.error(err);
@@ -210,11 +231,7 @@ function App() {
       }
 
       showToast(`"${change.title}" cambiado a pendientes`, "info");
-
-      // Cerrar el panel de detalle
       setSelectedChange(null);
-
-      // Recargar datos para reflejar el cambio
       await fetchData();
     } catch (err) {
       console.error(err);
@@ -236,6 +253,7 @@ function App() {
         onViewChange={setActiveView}
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
+      // si quieres, puedes usar validatedCount dentro del SubHeader
       />
 
       {/* Metrics Cards */}
@@ -249,7 +267,10 @@ function App() {
       {/* Main Content Area */}
       <div
         className="container"
-        style={{ marginTop: "var(--spacing-6)", marginBottom: "var(--spacing-8)" }}
+        style={{
+          marginTop: "var(--spacing-6)",
+          marginBottom: "var(--spacing-8)",
+        }}
       >
         <div
           style={{
@@ -274,7 +295,10 @@ function App() {
             ) : error ? (
               <div
                 className="card"
-                style={{ padding: "var(--spacing-6)", textAlign: "center" }}
+                style={{
+                  padding: "var(--spacing-6)",
+                  textAlign: "center",
+                }}
               >
                 <p
                   style={{
