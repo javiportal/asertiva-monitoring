@@ -56,12 +56,13 @@ export default function DetailPanel({
                     minWidth: '500px',
                     maxWidth: '700px',
                     height: '100vh',
-                    backgroundColor: 'white',
+                    backgroundColor: 'var(--card)',
                     boxShadow: 'var(--shadow-lg)',
                     zIndex: 50,
                     overflowY: 'auto',
                     display: 'flex',
                     flexDirection: 'column',
+                    transition: 'background-color 0.2s ease',
                 }}
             >
                 {/* Header */}
@@ -70,7 +71,7 @@ export default function DetailPanel({
                     borderBottom: '1px solid var(--border-light)',
                     position: 'sticky',
                     top: 0,
-                    backgroundColor: 'white',
+                    backgroundColor: 'var(--card)',
                     zIndex: 10,
                 }}>
                     <div className="flex items-center justify-between" style={{ marginBottom: 'var(--spacing-4)' }}>

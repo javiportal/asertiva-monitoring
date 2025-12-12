@@ -402,10 +402,11 @@ export default function EmailInbox({
         <div
             style={{
                 flex: 1,
-                backgroundColor: 'white',
+                backgroundColor: 'var(--card)',
                 borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--border-light)',
+                border: '1px solid var(--border)',
                 overflow: 'hidden',
+                transition: 'background-color 0.2s ease, border-color 0.2s ease',
             }}
         >
             {/* Header */}
@@ -419,7 +420,7 @@ export default function EmailInbox({
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)' }}>
-                    <Mail size={20} style={{ color: 'var(--blue-night)' }} />
+                    <Mail size={20} style={{ color: 'var(--primary)' }} />
                     <h2
                         style={{
                             fontSize: 'var(--font-size-md)',
@@ -608,20 +609,20 @@ export default function EmailInbox({
                                     display: 'flex',
                                     gap: 'var(--spacing-3)',
                                     padding: 'var(--spacing-4) var(--spacing-5)',
-                                    borderBottom: '1px solid var(--border-light)',
-                                    backgroundColor: isSelected ? 'var(--gray-100)' : isUnread ? 'var(--gray-50)' : 'white',
+                                    borderBottom: '1px solid var(--border)',
+                                    backgroundColor: isSelected ? 'var(--accent)' : isUnread ? 'var(--secondary)' : 'var(--card)',
                                     cursor: 'pointer',
                                     transition: 'background 200ms',
                                     position: 'relative',
                                 }}
                                 onMouseEnter={(e) => {
                                     if (!isSelected) {
-                                        e.currentTarget.style.backgroundColor = 'var(--gray-100)';
+                                        e.currentTarget.style.backgroundColor = 'var(--accent)';
                                     }
                                 }}
                                 onMouseLeave={(e) => {
                                     if (!isSelected) {
-                                        e.currentTarget.style.backgroundColor = isUnread ? 'var(--gray-50)' : 'white';
+                                        e.currentTarget.style.backgroundColor = isUnread ? 'var(--secondary)' : 'var(--card)';
                                     }
                                 }}
                             >
@@ -647,12 +648,12 @@ export default function EmailInbox({
                                             marginBottom: 'var(--spacing-1)',
                                         }}
                                     >
-                                        <Building2 size={14} style={{ color: 'var(--blue-night)' }} />
+                                        <Building2 size={14} style={{ color: 'var(--primary)' }} />
                                         <span
                                             style={{
                                                 fontSize: 'var(--font-size-sm)',
                                                 fontWeight: 500,
-                                                color: 'var(--blue-night)',
+                                                color: 'var(--primary)',
                                             }}
                                         >
                                             {getInstitutionDisplay(change)}
