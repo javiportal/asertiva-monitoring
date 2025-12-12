@@ -73,6 +73,9 @@ def classify_pending_changes(batch_size: int = 50):
                 importance = result.get("importance") or "NOT_IMPORTANT"
                 score = result.get("score") or 0.0
                 reason = result.get("reason") or ""
+                headline = result.get("headline") or ""
+                source_name = result.get("source_name") or ""
+                source_country = result.get("source_country") or ""
 
                 db.execute(
                     text(
@@ -82,6 +85,9 @@ def classify_pending_changes(batch_size: int = 50):
                             importance = :importance,
                             ai_score = :score,
                             ai_reason = :reason,
+                            headline = :headline,
+                            source_name = :source_name,
+                            source_country = :source_country,
                             status = 'FILTERED',
                             updated_at = NOW()
                         WHERE id = :id
@@ -92,6 +98,9 @@ def classify_pending_changes(batch_size: int = 50):
                         "importance": importance,
                         "score": score,
                         "reason": reason,
+                        "headline": headline,
+                        "source_name": source_name,
+                        "source_country": source_country,
                     },
                 )
                 updated += 1

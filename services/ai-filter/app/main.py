@@ -22,6 +22,9 @@ class ChangeOutput(BaseModel):
     importance: Literal["IMPORTANT", "NOT_IMPORTANT"]
     score: float = Field(ge=0.0, le=1.0)
     reason: str
+    headline: str = Field(description="Idea principal en máximo 10 palabras")
+    source_name: str = Field(description="Nombre de la institución o fuente que emite el comunicado")
+    source_country: str = Field(description="País de la fuente (El Salvador, Guatemala, Honduras, Colombia, Perú, México, etc.)")
 
 
 app = FastAPI(title="AI Filter Service")
@@ -58,7 +61,10 @@ DEBES responder SOLO en JSON con esta estructura:
 {{
   "importance": "IMPORTANT" o "NOT_IMPORTANT",
   "score": número entre 0 y 1 (confianza de tu clasificación),
-  "reason": "explicación breve en español"
+  "reason": "explicación breve en español de por qué es relevante o no",
+  "headline": "LA IDEA PRINCIPAL del cambio en máximo 10 palabras (ej: 'Nueva reforma tributaria para comercio exterior')",
+  "source_name": "Nombre de la institución o fuente que emite el contenido (ej: 'Ministerio de Hacienda', 'Corte Suprema de Justicia', 'Diario Oficial')",
+  "source_country": "País de la fuente (ej: 'El Salvador', 'Guatemala', 'Honduras', 'Colombia', 'Perú', 'México')"
 }}
 
 Reglas:
@@ -68,6 +74,9 @@ Reglas:
 - Marca "NOT_IMPORTANT" si el contenido es opinión, noticias generales,
   política sin cambio normativo claro, marketing, o ruido.
 - Sé conservador: no marques IMPORTANT si no estás seguro.
+- Para "headline": resume la idea principal en máximo 10 palabras, como un titular de periódico.
+- Para "source_name": identifica la institución gubernamental, entidad, diario oficial, o fuente que emite la información.
+- Para "source_country": identifica el país basándote en la URL, el contenido, o menciones geográficas.
 
 Ahora analiza este cambio:
 
@@ -89,6 +98,9 @@ def classify_with_llm(change: ChangeInput) -> ChangeOutput:
         importance: Literal["IMPORTANT", "NOT_IMPORTANT"]
         score: float
         reason: str
+        headline: str
+        source_name: str
+        source_country: str
 
     response = client.responses.parse(
         model=OPENAI_MODEL,
@@ -111,6 +123,9 @@ def classify_with_llm(change: ChangeInput) -> ChangeOutput:
         importance=parsed.importance,
         score=score,
         reason=parsed.reason,
+        headline=parsed.headline,
+        source_name=parsed.source_name,
+        source_country=parsed.source_country,
     )
 
 

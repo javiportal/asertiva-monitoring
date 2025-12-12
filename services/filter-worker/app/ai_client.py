@@ -20,6 +20,9 @@ def classify_change(title: str | None, content: str, url: str | None = None) -> 
       - importance
       - score
       - reason
+      - headline (idea principal)
+      - source_name (institución)
+      - source_country (país)
     """
     payload = {
         "title": title,
@@ -36,9 +39,13 @@ def classify_change(title: str | None, content: str, url: str | None = None) -> 
         raise AIFilterError(f"Error llamando a AI Filter: {e}, body={resp.text}") from e
 
     data = resp.json()
-    # Esperamos campos: importance, score, reason (como definimos en ai-filter)
+    # Esperamos campos: importance, score, reason, headline, source_name, source_country
     return {
         "importance": data.get("importance"),
         "score": data.get("score"),
         "reason": data.get("reason"),
+        "headline": data.get("headline"),
+        "source_name": data.get("source_name"),
+        "source_country": data.get("source_country"),
     }
+

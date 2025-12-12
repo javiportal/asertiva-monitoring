@@ -8,7 +8,11 @@ export type Change = {
     importance: string | null;
     ai_score: number | null;
     ai_reason: string | null;
+    headline: string | null;
+    source_name: string | null;
+    source_country: string | null;
     status: string;
+    raw_content: string | null;
     created_at: string;
 };
 

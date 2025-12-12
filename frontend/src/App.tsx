@@ -1,14 +1,12 @@
-// App.tsx
+// App.tsx - Fully connected with real API data
 import { useEffect, useState, useMemo } from "react";
 import Header from "./components/Header";
-import SubHeader from "./components/SubHeader";
-import MetricsCards from "./components/MetricsCards";
-import FiltersSidebar from "./components/FiltersSidebar";
-import ChangesTable, { type Change } from "./components/ChangesTable";
+import SearchFiltersCard from "./components/SearchFiltersCard";
+import InstitutionCheckboxes, { defaultInstitutions } from "./components/InstitutionCheckboxes";
+import EmailInbox from "./components/EmailInbox";
 import DetailPanel from "./components/DetailPanel";
-import EmptyState from "./components/EmptyState";
-import SkeletonLoader from "./components/SkeletonLoader";
 import Toast from "./components/Toast";
+import { type Change } from "./components/ChangesTable";
 
 type SummaryItem = {
   status: string | null;
@@ -22,28 +20,28 @@ type ToastMessage = {
   type: "success" | "error" | "info" | "warning";
 };
 
-
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
-
 
 function App() {
   // ---------------------------------------------------------------------------
-  // State
+  // State - API Data
   // ---------------------------------------------------------------------------
   const [changes, setChanges] = useState<Change[]>([]);
-  const [summary, setSummary] = useState<SummaryItem[]>([]);
+  const [_summary, setSummary] = useState<SummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [importanceFilter, setImportanceFilter] = useState<
-    ("IMPORTANT" | "NOT_IMPORTANT")[]
-  >([]);
-  const [activeView, setActiveView] = useState<
-    "new" | "pending" | "validated" | "history"
-  >("pending");
-  const [dateRange, setDateRange] = useState("30");
+  // Global search filter (from SearchFiltersCard)
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedInstitutions, setSelectedInstitutions] = useState<string[]>([]);
 
+  // Email inbox filters
+  const [emailSearchQuery, setEmailSearchQuery] = useState("");
+  const [emailCountryFilter, setEmailCountryFilter] = useState<string | null>(null);
+  const [importanceFilter, setImportanceFilter] = useState<"all" | "important" | "not_important">("all");
+
+  // Detail panel state
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -87,10 +85,7 @@ function App() {
       ]);
 
       console.log("RAW /wachet-changes:", changesText.slice(0, 300));
-      console.log(
-        "RAW /wachet-changes/summary:",
-        summaryText.slice(0, 300)
-      );
+      console.log("RAW /wachet-changes/summary:", summaryText.slice(0, 300));
 
       let changesJson: any;
       let summaryJson: any;
@@ -122,72 +117,87 @@ function App() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Metrics
-  // ---------------------------------------------------------------------------
-  const totalImportant = summary
-    .filter((s) => s.importance === "IMPORTANT")
-    .reduce((acc, s) => acc + s.total, 0);
-
-  const pendingCount = changes.filter(
-    (c) => c.status === "PENDING" || c.status === "FILTERED"
-  ).length;
-
-  const validatedCount = changes.filter(
-    (c) => c.status === "VALIDATED" || c.status === "PUBLISHED"
-  ).length;
-
-  const totalAnalyzed = changes.length;
-
-  // ---------------------------------------------------------------------------
-  // Filter changes based on active filters
+  // Filtered changes based on global filters
   // ---------------------------------------------------------------------------
   const filteredChanges = useMemo(() => {
     let result = changes;
 
-    // Tabs
-    if (activeView === "new") {
-      result = result.filter((c) => c.status === "NEW");
-    } else if (activeView === "pending") {
-      result = result.filter(
-        (c) => c.status === "PENDING" || c.status === "FILTERED"
-      );
-    } else if (activeView === "validated") {
-      result = result.filter(
-        (c) => c.status === "VALIDATED" || c.status === "PUBLISHED"
-      );
-    }
-    // history => muestra todos
-
-    // Importancia
-    if (importanceFilter.length > 0) {
-      result = result.filter((c) =>
-        importanceFilter.includes(c.importance as any)
-      );
-    }
-
-    // Búsqueda
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    // Global search filter
+    if (globalSearchQuery.trim()) {
+      const q = globalSearchQuery.toLowerCase();
       result = result.filter((c) => {
         return (
           (c.title ?? "").toLowerCase().includes(q) ||
           (c.ai_reason ?? "").toLowerCase().includes(q) ||
           (c.url ?? "").toLowerCase().includes(q) ||
-          (c.wachet_id ?? "").toLowerCase().includes(q)
+          (c.wachet_id ?? "").toLowerCase().includes(q) ||
+          (c.source_name ?? "").toLowerCase().includes(q)
         );
       });
     }
 
+    // Global country filter from CountrySelector
+    if (selectedCountry) {
+      result = result.filter((c) => {
+        // Extract country from various sources
+        const getCountryCode = (): string | null => {
+          // From DB field
+          if (c.source_country) {
+            const name = c.source_country.toLowerCase();
+            if (name.includes('colombia')) return 'CO';
+            if (name.includes('el salvador')) return 'SV';
+            if (name.includes('guatemala')) return 'GT';
+            if (name.includes('honduras')) return 'HN';
+            if (name.includes('perú') || name.includes('peru')) return 'PE';
+            if (name.includes('méxico') || name.includes('mexico')) return 'MX';
+          }
+          // From ai_reason
+          if (c.ai_reason) {
+            const text = c.ai_reason.toLowerCase();
+            if (text.includes('colombia')) return 'CO';
+            if (text.includes('el salvador')) return 'SV';
+            if (text.includes('guatemala')) return 'GT';
+            if (text.includes('honduras')) return 'HN';
+            if (text.includes('perú') || text.includes('peru')) return 'PE';
+            if (text.includes('méxico') || text.includes('mexico')) return 'MX';
+          }
+          // From URL TLD
+          if (c.url) {
+            try {
+              const tld = new URL(c.url).hostname.split('.').pop();
+              const map: Record<string, string> = { 'co': 'CO', 'sv': 'SV', 'gt': 'GT', 'hn': 'HN', 'pe': 'PE', 'mx': 'MX' };
+              if (tld && map[tld]) return map[tld];
+            } catch { /* ignore */ }
+          }
+          return null;
+        };
+        return getCountryCode() === selectedCountry;
+      });
+    }
+
     return result;
-  }, [changes, searchQuery, importanceFilter, activeView]);
+  }, [changes, globalSearchQuery, selectedCountry]);
 
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
   const handleClearFilters = () => {
-    setSearchQuery("");
-    setImportanceFilter([]);
-    setActiveView("pending");
+    setGlobalSearchQuery("");
+    setSelectedCountry(null);
+    setSelectedInstitutions([]);
+    setEmailSearchQuery("");
+    setEmailCountryFilter(null);
+    setImportanceFilter("all");
+  };
+
+  const handleToggleInstitution = (id: string) => {
+    setSelectedInstitutions((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectChange = (change: Change) => {
+    setSelectedChange(change);
   };
 
   const handleValidate = async (change: Change) => {
@@ -243,35 +253,28 @@ function App() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "var(--bg-primary)" }}>
+    <div style={{ minHeight: "100vh" }}>
       {/* Header */}
       <Header />
 
-      {/* Sub Header */}
-      <SubHeader
-        activeView={activeView}
-        onViewChange={setActiveView}
-        dateRange={dateRange}
-        onDateRangeChange={setDateRange}
-      // si quieres, puedes usar validatedCount dentro del SubHeader
-      />
-
-      {/* Metrics Cards */}
-      <MetricsCards
-        totalChanges={totalAnalyzed}
-        importantChanges={totalImportant}
-        pendingChanges={pendingCount}
-        affectedClients={0}
-      />
-
-      {/* Main Content Area */}
-      <div
+      {/* Main Content */}
+      <main
         className="container"
         style={{
-          marginTop: "var(--spacing-6)",
-          marginBottom: "var(--spacing-8)",
+          paddingTop: "var(--spacing-6)",
+          paddingBottom: "var(--spacing-8)",
         }}
       >
+        {/* Search & Filters Card */}
+        <SearchFiltersCard
+          searchQuery={globalSearchQuery}
+          onSearchChange={setGlobalSearchQuery}
+          selectedCountry={selectedCountry}
+          onSelectCountry={setSelectedCountry}
+          onClearFilters={handleClearFilters}
+        />
+
+        {/* Two Column Layout */}
         <div
           style={{
             display: "flex",
@@ -279,65 +282,31 @@ function App() {
             alignItems: "flex-start",
           }}
         >
-          {/* Filters Sidebar */}
-          <FiltersSidebar
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            importanceFilter={importanceFilter}
-            onImportanceFilterChange={setImportanceFilter}
-            onClearFilters={handleClearFilters}
+          {/* Left Sidebar - Institution Checkboxes */}
+          <InstitutionCheckboxes
+            institutions={defaultInstitutions}
+            selectedInstitutions={selectedInstitutions}
+            onToggleInstitution={handleToggleInstitution}
+            countryFilter={selectedCountry}
           />
 
-          {/* Main Content */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {loading ? (
-              <SkeletonLoader />
-            ) : error ? (
-              <div
-                className="card"
-                style={{
-                  padding: "var(--spacing-6)",
-                  textAlign: "center",
-                }}
-              >
-                <p
-                  style={{
-                    color: "var(--red-accent)",
-                    fontWeight: 500,
-                  }}
-                >
-                  Error al cargar datos: {error}
-                </p>
-              </div>
-            ) : filteredChanges.length === 0 ? (
-              <div className="card">
-                <EmptyState
-                  message={
-                    searchQuery ||
-                      importanceFilter.length > 0 ||
-                      activeView !== "history"
-                      ? "No hay cambios que coincidan con los filtros aplicados"
-                      : "No hay cambios en este rango de fechas"
-                  }
-                  onClearFilters={
-                    searchQuery ||
-                      importanceFilter.length > 0 ||
-                      activeView !== "history"
-                      ? handleClearFilters
-                      : undefined
-                  }
-                />
-              </div>
-            ) : (
-              <ChangesTable
-                changes={filteredChanges}
-                selectedChangeId={selectedChange?.id ?? null}
-                onSelectChange={setSelectedChange}
-              />
-            )}
-          </div>
+          {/* Right Content - Email Inbox */}
+          <EmailInbox
+            changes={filteredChanges}
+            loading={loading}
+            error={error}
+            searchQuery={emailSearchQuery}
+            onSearchChange={setEmailSearchQuery}
+            countryFilter={emailCountryFilter}
+            onCountryFilterChange={setEmailCountryFilter}
+            importanceFilter={importanceFilter}
+            onImportanceFilterChange={setImportanceFilter}
+            selectedInstitutions={selectedInstitutions}
+            onSelectChange={handleSelectChange}
+            selectedChangeId={selectedChange?.id ?? null}
+          />
         </div>
-      </div>
+      </main>
 
       {/* Detail Panel */}
       {selectedChange && (

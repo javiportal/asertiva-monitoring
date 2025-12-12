@@ -63,7 +63,11 @@ def list_changes(
                importance,
                ai_score,
                ai_reason,
+               headline,
+               source_name,
+               source_country,
                status,
+               raw_content,
                created_at,
                updated_at
         FROM wachet_changes
