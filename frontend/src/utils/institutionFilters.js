@@ -25,20 +25,23 @@ function normalizeText(text) {
 
 export function filterInstitutions(institutions, countryFilter, searchQuery) {
   const normalizedQuery = normalizeText(searchQuery);
+  const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
 
   return institutions.filter((institution) => {
     const matchesCountry = countryFilter
-      ? institution.countryCode.toLowerCase() === countryFilter.toLowerCase()
+      ? (institution.countryCode || '').toLowerCase() === countryFilter.toLowerCase()
       : true;
 
     const countryName = COUNTRY_NAMES[institution.countryCode] || '';
     const searchableText = normalizeText(
-      `${institution.name} ${institution.id} ${countryName}`,
+      `${institution.name} ${institution.id} ${institution.type} ${countryName}`
     );
-    const matchesQuery = normalizedQuery
-      ? searchableText.includes(normalizedQuery)
+
+    const matchesQuery = queryTerms.length
+      ? queryTerms.every((term) => searchableText.includes(term))
       : true;
 
     return matchesCountry && matchesQuery;
   });
 }
+
