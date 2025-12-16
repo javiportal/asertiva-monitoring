@@ -38,7 +38,6 @@ function App() {
 
   // Email inbox filters
   const [emailSearchQuery, setEmailSearchQuery] = useState("");
-  const [emailCountryFilter, setEmailCountryFilter] = useState<string | null>(null);
   const [importanceFilter, setImportanceFilter] = useState<"all" | "important" | "not_important">("all");
 
   // Detail panel state
@@ -137,7 +136,7 @@ function App() {
     }
 
     // Global country filter from CountrySelector
-    if (selectedCountry) {
+    if (selectedCountry && selectedCountry !== 'INTERNATIONAL' && selectedCountry !== 'LEGISLATIVE') {
       result = result.filter((c) => {
         // Extract country from various sources
         const getCountryCode = (): string | null => {
@@ -186,7 +185,6 @@ function App() {
     setSelectedCountry(null);
     setSelectedInstitutions([]);
     setEmailSearchQuery("");
-    setEmailCountryFilter(null);
     setImportanceFilter("all");
   };
 
@@ -297,8 +295,7 @@ function App() {
             error={error}
             searchQuery={emailSearchQuery}
             onSearchChange={setEmailSearchQuery}
-            countryFilter={emailCountryFilter}
-            onCountryFilterChange={setEmailCountryFilter}
+            countryFilter={selectedCountry}
             importanceFilter={importanceFilter}
             onImportanceFilterChange={setImportanceFilter}
             selectedInstitutions={selectedInstitutions}
