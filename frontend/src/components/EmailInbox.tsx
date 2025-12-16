@@ -1,6 +1,8 @@
 // EmailInbox.tsx - Email inbox view using real API data
 import { useEffect, useMemo, useState } from 'react';
-import { Mail, Search, Star, Building2, Calendar, Clock, Globe } from 'lucide-react';
+import { Mail, Search, Star, Building2, Calendar, Clock } from 'lucide-react';
+import institutionsCatalog from '../data/institutions.json';
+import { normalizeInstitutionText } from '../utils/institutionFilters.js';
 import { type Change } from './ChangesTable';
 
 type EmailInboxProps = {
@@ -10,7 +12,6 @@ type EmailInboxProps = {
     searchQuery: string;
     onSearchChange: (query: string) => void;
     countryFilter: string | null;
-    onCountryFilterChange: (code: string | null) => void;
     importanceFilter: 'all' | 'important' | 'not_important';
     onImportanceFilterChange: (filter: 'all' | 'important' | 'not_important') => void;
     selectedInstitutions: string[];
@@ -18,18 +19,56 @@ type EmailInboxProps = {
     selectedChangeId: number | null;
 };
 
-// Country chips data
-const countryChips = [
-    { code: null, name: 'Todos', flag: <Globe size={14} /> },
-    { code: 'SV', name: 'El Salvador', flag: '🇸🇻' },
-    { code: 'GT', name: 'Guatemala', flag: '🇬🇹' },
-    { code: 'HN', name: 'Honduras', flag: '🇭🇳' },
-    { code: 'CO', name: 'Colombia', flag: '🇨🇴' },
-    { code: 'PE', name: 'Perú', flag: '🇵🇪' },
-    { code: 'MX', name: 'México', flag: '🇲🇽' },
-    { code: 'INTERNATIONAL', name: 'Tendencias Internacionales', flag: '🌐' },
-    { code: 'LEGISLATIVE', name: 'Monitoreo Legislativo', flag: '🏛️' },
-];
+type InstitutionCatalogItem = {
+    id: string;
+    name: string;
+    type: string;
+    countryCode: string;
+};
+
+const COUNTRY_LABELS: Record<string, string> = {
+    CO: 'Colombia',
+    CR: 'Costa Rica',
+    SV: 'El Salvador',
+    GT: 'Guatemala',
+    HN: 'Honduras',
+    PE: 'Perú',
+    MX: 'México',
+    PA: 'Panamá',
+    INTERNATIONAL: 'Tendencias Internacionales',
+    LEGISLATIVE: 'Monitoreo Legislativo',
+};
+
+const COUNTRY_CODE_TOKENS = new Set(['co', 'cr', 'sv', 'gt', 'hn', 'pe', 'mx', 'pa']);
+
+const normalizeInstitutionValue = (text: string | null | undefined) => {
+    const normalized = normalizeInstitutionText(text ?? '');
+    return normalized.length > 2 ? normalized : '';
+};
+
+const buildInstitutionTermsById = () => {
+    const lookup = new Map<string, string[]>();
+    (institutionsCatalog as InstitutionCatalogItem[]).forEach((inst) => {
+        const terms = new Set<string>();
+        const normalizedName = normalizeInstitutionValue(inst.name);
+        if (normalizedName) terms.add(normalizedName);
+
+        const normalizedId = normalizeInstitutionValue(inst.id);
+        if (normalizedId) terms.add(normalizedId);
+
+        inst.id.split('-').forEach((part) => {
+            const normalizedPart = normalizeInstitutionValue(part);
+            if (normalizedPart && !COUNTRY_CODE_TOKENS.has(normalizedPart)) {
+                terms.add(normalizedPart);
+            }
+        });
+
+        lookup.set(inst.id, Array.from(terms));
+    });
+    return lookup;
+};
+
+const INSTITUTION_TERMS_BY_ID = buildInstitutionTermsById();
 
 // Helper to format date
 function formatDate(dateStr: string): { date: string; time: string } {
@@ -119,6 +158,46 @@ function extractInstitutionFromText(text: string): string | null {
         }
     }
     return null;
+}
+
+// Build a set of institution tokens from a change to compare against selections
+function getChangeInstitutionTokens(change: Change): string[] {
+    const tokens = new Set<string>();
+    const addToken = (value?: string | null) => {
+        const normalized = normalizeInstitutionValue(value ?? '');
+        if (normalized) {
+            tokens.add(normalized);
+        }
+    };
+
+    addToken(change.source_name);
+
+    if (change.ai_reason) {
+        addToken(extractInstitutionFromText(change.ai_reason));
+    }
+
+    if (change.raw_content) {
+        try {
+            const rawData = JSON.parse(change.raw_content);
+            const taskName = rawData.taskName || rawData.name || rawData.task?.name || rawData.monitorName;
+            addToken(taskName);
+        } catch (e) {
+            /* ignore malformed raw_content */
+        }
+    }
+
+    if (change.url) {
+        try {
+            const url = new URL(change.url);
+            const hostname = url.hostname.replace('www.', '');
+            const [subdomain] = hostname.split('.');
+            addToken(subdomain);
+        } catch (e) {
+            /* ignore invalid URLs */
+        }
+    }
+
+    return Array.from(tokens);
 }
 
 // Helper to get formatted institution display: "Institución - País"
@@ -274,7 +353,6 @@ export default function EmailInbox({
     searchQuery,
     onSearchChange,
     countryFilter,
-    onCountryFilterChange,
     importanceFilter,
     onImportanceFilterChange,
     selectedInstitutions,
@@ -297,6 +375,24 @@ export default function EmailInbox({
     useEffect(() => {
         setPage(1);
     }, [searchQuery, countryFilter, importanceFilter, selectedInstitutions]);
+
+    const selectedInstitutionTerms = useMemo(() => {
+        const terms = new Set<string>();
+        selectedInstitutions.forEach((id) => {
+            const normalizedId = normalizeInstitutionValue(id);
+            if (normalizedId) {
+                terms.add(normalizedId);
+            }
+            const catalogTerms = INSTITUTION_TERMS_BY_ID.get(id);
+            catalogTerms?.forEach((term) => terms.add(term));
+        });
+        return Array.from(terms);
+    }, [selectedInstitutions]);
+
+    const appliedCountryLabel = countryFilter
+        ? `Filtrando por ${COUNTRY_LABELS[countryFilter as keyof typeof COUNTRY_LABELS] || countryFilter}`
+        : 'Todos los países';
+
     // Helper to get country code for filtering
     const getCountryCode = (change: Change): string | null => {
         // Check db field first
@@ -347,29 +443,6 @@ export default function EmailInbox({
         return null;
     };
 
-    // Helper to get institution name for filtering
-    const getInstitutionId = (change: Change): string | null => {
-        if (change.source_name) return change.source_name.toLowerCase();
-
-        // Extract from ai_reason
-        if (change.ai_reason) {
-            const text = change.ai_reason;
-            const match = extractInstitutionFromText(text);
-            if (match) return match.toLowerCase();
-        }
-
-        // Extract from raw_content taskName
-        if (change.raw_content) {
-            try {
-                const rawData = JSON.parse(change.raw_content);
-                const taskName = rawData.taskName || rawData.name || rawData.task?.name;
-                if (taskName) return taskName.toLowerCase();
-            } catch (e) { /* ignore */ }
-        }
-
-        return null;
-    };
-
     // Filter changes
     const filteredChanges = useMemo(() => changes.filter((change) => {
         // Importance filter
@@ -377,18 +450,20 @@ export default function EmailInbox({
         if (importanceFilter === 'not_important' && change.importance === 'IMPORTANT') return false;
 
         // Country filter
-        if (countryFilter) {
+        if (countryFilter && countryFilter !== 'INTERNATIONAL' && countryFilter !== 'LEGISLATIVE') {
             const changeCountry = getCountryCode(change);
             if (changeCountry !== countryFilter) return false;
         }
 
         // Institution filter
-        if (selectedInstitutions.length > 0) {
-            const changeInst = getInstitutionId(change);
-            if (!changeInst) return false;
-            // Check if any selected institution matches
-            const matches = selectedInstitutions.some(inst =>
-                changeInst.includes(inst.toLowerCase())
+        if (selectedInstitutionTerms.length > 0) {
+            const changeTokens = getChangeInstitutionTokens(change);
+            if (changeTokens.length === 0) return false;
+
+            const matches = changeTokens.some((token) =>
+                selectedInstitutionTerms.some((term) =>
+                    token.includes(term) || term.includes(token),
+                ),
             );
             if (!matches) return false;
         }
@@ -408,7 +483,7 @@ export default function EmailInbox({
         }
 
         return true;
-    }), [changes, countryFilter, importanceFilter, localSearch, selectedInstitutions]);
+    }), [changes, countryFilter, importanceFilter, localSearch, selectedInstitutionTerms]);
 
     // Sort by date (newest first)
     const sortedChanges = useMemo(() => [...filteredChanges].sort((a, b) => {
@@ -495,7 +570,7 @@ export default function EmailInbox({
                     />
                 </div>
 
-                {/* Country Chips */}
+                {/* Country indicator */}
                 <div style={{ marginBottom: 'var(--spacing-3)' }}>
                     <p
                         style={{
@@ -505,49 +580,10 @@ export default function EmailInbox({
                             marginBottom: 'var(--spacing-2)',
                         }}
                     >
-                        Filtrar por país
+                        País aplicado
                     </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-2)' }}>
-                        {countryChips.map((chip) => {
-                            const isActive = countryFilter === chip.code;
-                            return (
-                                <button
-                                    key={chip.code ?? 'all'}
-                                    onClick={() => onCountryFilterChange(chip.code)}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 'var(--spacing-1)',
-                                        padding: 'var(--spacing-1) var(--spacing-3)',
-                                        fontSize: 'var(--font-size-sm)',
-                                        fontWeight: 500,
-                                        backgroundColor: isActive ? 'var(--blue-night)' : 'white',
-                                        color: isActive ? 'white' : 'var(--text-primary)',
-                                        border: `1px solid ${isActive ? 'var(--blue-night)' : 'var(--border-light)'}`,
-                                        borderRadius: 'var(--radius-full)',
-                                        cursor: 'pointer',
-                                        transition: 'all 200ms',
-                                    }}
-                                    aria-pressed={isActive}
-                                    aria-label={`Filtrar por ${chip.name}`}
-                                    onMouseEnter={(e) => {
-                                        if (!isActive) {
-                                            e.currentTarget.style.borderColor = 'var(--blue-night)';
-                                        }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        if (!isActive) {
-                                            e.currentTarget.style.borderColor = 'var(--border-light)';
-                                        }
-                                    }}
-                                >
-                                    <span style={{ fontSize: '0.875rem' }}>
-                                        {typeof chip.flag === 'string' ? chip.flag : chip.flag}
-                                    </span>
-                                    {chip.name}
-                                </button>
-                            );
-                        })}
+                    <div style={{ padding: 'var(--spacing-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', backgroundColor: 'var(--gray-50)', color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)' }}>
+                        {appliedCountryLabel}
                     </div>
                 </div>
 

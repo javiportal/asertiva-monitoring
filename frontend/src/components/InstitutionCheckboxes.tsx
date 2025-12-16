@@ -25,9 +25,18 @@ export default function InstitutionCheckboxes({
     countryFilter,
 }: InstitutionCheckboxesProps) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [localCountry, setLocalCountry] = useState<string | null>(null);
-
-    const activeCountry = localCountry ?? countryFilter ?? null;
+    const activeCountry = countryFilter ?? null;
+    const countryNameMap: Record<string, string> = {
+        CO: 'Colombia',
+        CR: 'Costa Rica',
+        SV: 'El Salvador',
+        GT: 'Guatemala',
+        MX: 'México',
+        HN: 'Honduras',
+        PE: 'Perú',
+        INTERNATIONAL: 'Tendencias Internacionales',
+        LEGISLATIVE: 'Monitoreo Legislativo',
+    };
 
     const filteredInstitutions = useMemo(
         () => filterInstitutions(institutions, activeCountry, searchQuery),
@@ -104,30 +113,12 @@ export default function InstitutionCheckboxes({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
-                    <label
-                        htmlFor="institution-country-filter"
-                        style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}
-                    >
-                        País
-                    </label>
-                    <select
-                        id="institution-country-filter"
-                        value={activeCountry ?? ''}
-                        onChange={(e) => setLocalCountry(e.target.value || null)}
-                        style={{
-                            padding: 'var(--spacing-2)',
-                            borderRadius: 'var(--radius-sm)',
-                            border: '1px solid var(--border-light)',
-                            fontSize: 'var(--font-size-sm)',
-                        }}
-                    >
-                        <option value="">Todos</option>
-                        <option value="CO">COL</option>
-                        <option value="CR">CRI</option>
-                        <option value="SV">SLV</option>
-                        <option value="GT">GTM</option>
-                        <option value="MX">MEX</option>
-                    </select>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        País (heredado)
+                    </span>
+                    <div style={{ padding: 'var(--spacing-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)', fontSize: 'var(--font-size-sm)', background: 'var(--gray-50)' }}>
+                        {activeCountry ? `Mostrando instituciones de ${countryNameMap[activeCountry] || activeCountry}` : 'Mostrando todas las instituciones'}
+                    </div>
                 </div>
 
                 <div style={{ position: 'relative' }}>
