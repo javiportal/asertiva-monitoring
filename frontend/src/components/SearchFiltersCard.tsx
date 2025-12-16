@@ -1,4 +1,5 @@
 // SearchFiltersCard.tsx - Main search and filters card matching Figma design
+import { useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import CountrySelector, { defaultCountries } from './CountrySelector';
 
@@ -17,7 +18,20 @@ export default function SearchFiltersCard({
     onSelectCountry,
     onClearFilters,
 }: SearchFiltersCardProps) {
+    const [localQuery, setLocalQuery] = useState(searchQuery);
     const hasActiveFilters = searchQuery || selectedCountry !== null;
+
+    useEffect(() => {
+        const handler = window.setTimeout(() => {
+            onSearchChange(localQuery);
+        }, 300);
+
+        return () => window.clearTimeout(handler);
+    }, [localQuery, onSearchChange]);
+
+    useEffect(() => {
+        setLocalQuery(searchQuery);
+    }, [searchQuery]);
 
     return (
         <div
@@ -61,11 +75,15 @@ export default function SearchFiltersCard({
                         color: 'var(--text-secondary)',
                     }}
                 />
+                <label htmlFor="global-search" className="sr-only">
+                    Buscar por nombre de institución
+                </label>
                 <input
+                    id="global-search"
                     type="text"
                     placeholder="Buscar por nombre de institución..."
-                    value={searchQuery}
-                    onChange={(e) => onSearchChange(e.target.value)}
+                    value={localQuery}
+                    onChange={(e) => setLocalQuery(e.target.value)}
                     className="input"
                     style={{
                         paddingLeft: '44px',
