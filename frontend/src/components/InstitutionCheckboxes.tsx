@@ -1,6 +1,8 @@
 // InstitutionCheckboxes.tsx - Sidebar with grouped institution checkboxes
-import { Building2 } from 'lucide-react';
+import { Building2, Filter, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import institutionsData from '../data/institutions.json';
+import { filterInstitutions } from '../utils/institutionFilters.js';
 
 export type Institution = {
     id: string;
@@ -22,10 +24,15 @@ export default function InstitutionCheckboxes({
     onToggleInstitution,
     countryFilter,
 }: InstitutionCheckboxesProps) {
-    // Filter institutions by country
-    const filteredInstitutions = countryFilter
-        ? institutions.filter((i) => i.countryCode === countryFilter)
-        : institutions;
+    const [searchQuery, setSearchQuery] = useState('');
+    const [localCountry, setLocalCountry] = useState<string | null>(null);
+
+    const activeCountry = localCountry ?? countryFilter ?? null;
+
+    const filteredInstitutions = useMemo(
+        () => filterInstitutions(institutions, activeCountry, searchQuery),
+        [institutions, activeCountry, searchQuery],
+    );
 
     // Group institutions by type
     const groupedInstitutions = filteredInstitutions.reduce((acc, institution) => {
@@ -74,18 +81,125 @@ export default function InstitutionCheckboxes({
                 </h3>
             </div>
 
-            {/* Selection Counter */}
-            <p
+            {/* Filters */}
+            <div
                 style={{
-                    fontSize: 'var(--font-size-sm)',
-                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 'var(--spacing-3)',
                     marginBottom: 'var(--spacing-4)',
                 }}
             >
-                {selectedCount === 0
-                    ? 'Ninguna seleccionada'
-                    : `${selectedCount} seleccionada${selectedCount > 1 ? 's' : ''}`}
-            </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-2)' }}>
+                    <Filter size={16} style={{ color: 'var(--text-secondary)' }} />
+                    <span
+                        style={{
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'var(--text-secondary)',
+                            fontWeight: 500,
+                        }}
+                    >
+                        Filtros de instituciones
+                    </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-2)' }}>
+                    <label
+                        htmlFor="institution-country-filter"
+                        style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}
+                    >
+                        País
+                    </label>
+                    <select
+                        id="institution-country-filter"
+                        value={activeCountry ?? ''}
+                        onChange={(e) => setLocalCountry(e.target.value || null)}
+                        style={{
+                            padding: 'var(--spacing-2)',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-light)',
+                            fontSize: 'var(--font-size-sm)',
+                        }}
+                    >
+                        <option value="">Todos</option>
+                        <option value="CO">COL</option>
+                        <option value="CR">CRI</option>
+                        <option value="SV">SLV</option>
+                        <option value="GT">GTM</option>
+                        <option value="MX">MEX</option>
+                    </select>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <label
+                        htmlFor="institution-search"
+                        style={{
+                            position: 'absolute',
+                            left: '-9999px',
+                            visibility: 'hidden',
+                        }}
+                    >
+                        Buscar instituciones
+                    </label>
+                    <Search
+                        size={16}
+                        style={{
+                            position: 'absolute',
+                            left: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: 'var(--text-secondary)',
+                        }}
+                    />
+                    <input
+                        id="institution-search"
+                        type="text"
+                        placeholder="Buscar por nombre o código"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: '10px 12px 10px 36px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-light)',
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'var(--text-primary)',
+                        }}
+                    />
+                </div>
+            </div>
+
+            {/* Selection Counter */}
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 'var(--spacing-4)',
+                }}
+            >
+                <p
+                    style={{
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--text-secondary)',
+                        margin: 0,
+                    }}
+                >
+                    {selectedCount === 0
+                        ? 'Ninguna seleccionada'
+                        : `${selectedCount} seleccionada${selectedCount > 1 ? 's' : ''}`}
+                </p>
+                <p
+                    style={{
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--text-secondary)',
+                        margin: 0,
+                        fontWeight: 600,
+                    }}
+                >
+                    {filteredInstitutions.length} / {institutions.length}
+                </p>
+            </div>
 
             {/* Grouped Institution Lists */}
             {Object.entries(groupedInstitutions).map(([type, insts]) => (
@@ -165,7 +279,7 @@ export default function InstitutionCheckboxes({
                         padding: 'var(--spacing-4)',
                     }}
                 >
-                    No hay instituciones para mostrar
+                    Sin resultados
                 </p>
             )}
         </aside>
