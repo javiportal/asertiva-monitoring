@@ -18,7 +18,10 @@ test('filters by country code', async () => {
   const institutions = await loadInstitutions();
   const svInstitutions = filterInstitutions(institutions, 'SV', '');
   assert.equal(svInstitutions.every((inst) => inst.countryCode === 'SV'), true);
-  assert.equal(svInstitutions.length, 4);
+  assert.equal(
+    svInstitutions.length,
+    institutions.filter((inst) => inst.countryCode === 'SV').length,
+  );
 });
 
 test('filters by search query (case-insensitive)', async () => {
@@ -33,5 +36,16 @@ test('combines country and search filters including code matches', async () => {
   const filtered = filterInstitutions(institutions, 'GT', 'cc-gt');
   assert.equal(filtered.length, 1);
   assert.equal(filtered[0].name, 'Corte de Constitucionalidad');
+});
+
+test('handles country name mentions in the query', async () => {
+  const institutions = await loadInstitutions();
+  const filtered = filterInstitutions(
+    institutions,
+    'SV',
+    'ministerio de salud de el salvador',
+  );
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].id, 'ms-sv');
 });
 

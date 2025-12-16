@@ -14,7 +14,7 @@ const loadInstitutions = async () => {
 
 test('includes the complete catalog', async () => {
   const institutions = await loadInstitutions();
-  assert.equal(institutions.length, 21);
+  assert.equal(institutions.length, 63);
 });
 
 test('provides examples for every country', async () => {
@@ -22,10 +22,9 @@ test('provides examples for every country', async () => {
   const expectedSamples = {
     SV: 'Corte Suprema de Justicia',
     GT: 'Corte de Constitucionalidad',
-    HN: 'Consejo Nacional Electoral',
     CO: 'Consejo de Estado',
-    PE: 'Jurado Nacional de Elecciones',
-    MX: 'Suprema Corte de Justicia de la Nación',
+    CR: 'Ministerio de Salud',
+    MX: 'Servicio de Administración Tributaria',
   };
 
   const namesByCountry = institutions.reduce((acc, institution) => {
