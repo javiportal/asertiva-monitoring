@@ -1,4 +1,5 @@
 // EmailInbox.tsx - Email inbox view using real API data
+import { useEffect, useMemo, useState } from 'react';
 import { Mail, Search, Star, Building2, Calendar, Clock, Globe } from 'lucide-react';
 import { type Change } from './ChangesTable';
 
@@ -280,6 +281,22 @@ export default function EmailInbox({
     onSelectChange,
     selectedChangeId,
 }: EmailInboxProps) {
+    const [localSearch, setLocalSearch] = useState(searchQuery);
+    const [page, setPage] = useState(1);
+    const ITEMS_PER_PAGE = 20;
+
+    useEffect(() => {
+        const handler = window.setTimeout(() => onSearchChange(localSearch), 300);
+        return () => window.clearTimeout(handler);
+    }, [localSearch, onSearchChange]);
+
+    useEffect(() => {
+        setLocalSearch(searchQuery);
+    }, [searchQuery]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [searchQuery, countryFilter, importanceFilter, selectedInstitutions]);
     // Helper to get country code for filtering
     const getCountryCode = (change: Change): string | null => {
         // Check db field first
@@ -354,7 +371,7 @@ export default function EmailInbox({
     };
 
     // Filter changes
-    const filteredChanges = changes.filter((change) => {
+    const filteredChanges = useMemo(() => changes.filter((change) => {
         // Importance filter
         if (importanceFilter === 'important' && change.importance !== 'IMPORTANT') return false;
         if (importanceFilter === 'not_important' && change.importance === 'IMPORTANT') return false;
@@ -377,8 +394,8 @@ export default function EmailInbox({
         }
 
         // Search filter
-        if (searchQuery) {
-            const q = searchQuery.toLowerCase();
+        if (localSearch) {
+            const q = localSearch.toLowerCase();
             if (
                 !(change.title || '').toLowerCase().includes(q) &&
                 !(change.ai_reason || '').toLowerCase().includes(q) &&
@@ -391,12 +408,17 @@ export default function EmailInbox({
         }
 
         return true;
-    });
+    }), [changes, countryFilter, importanceFilter, localSearch, selectedInstitutions]);
 
     // Sort by date (newest first)
-    const sortedChanges = [...filteredChanges].sort((a, b) => {
+    const sortedChanges = useMemo(() => [...filteredChanges].sort((a, b) => {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
+    }), [filteredChanges]);
+
+    const totalPages = Math.max(1, Math.ceil(sortedChanges.length / ITEMS_PER_PAGE));
+    const paginatedChanges = sortedChanges.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+    const startEntry = sortedChanges.length === 0 ? 0 : (page - 1) * ITEMS_PER_PAGE + 1;
+    const endEntry = Math.min(page * ITEMS_PER_PAGE, sortedChanges.length);
 
     return (
         <div
@@ -456,11 +478,15 @@ export default function EmailInbox({
                             color: 'var(--text-secondary)',
                         }}
                     />
+                    <label htmlFor="email-search" className="sr-only">
+                        Buscar en correos (asunto, institución, contenido)
+                    </label>
                     <input
+                        id="email-search"
                         type="text"
                         placeholder="Buscar en correos (asunto, institución, contenido)..."
-                        value={searchQuery}
-                        onChange={(e) => onSearchChange(e.target.value)}
+                        value={localSearch}
+                        onChange={(e) => setLocalSearch(e.target.value)}
                         className="input"
                         style={{
                             paddingLeft: '40px',
@@ -502,6 +528,8 @@ export default function EmailInbox({
                                         cursor: 'pointer',
                                         transition: 'all 200ms',
                                     }}
+                                    aria-pressed={isActive}
+                                    aria-label={`Filtrar por ${chip.name}`}
                                     onMouseEnter={(e) => {
                                         if (!isActive) {
                                             e.currentTarget.style.borderColor = 'var(--blue-night)';
@@ -557,6 +585,8 @@ export default function EmailInbox({
                                         cursor: 'pointer',
                                         transition: 'all 200ms',
                                     }}
+                                    aria-pressed={isActive}
+                                    aria-label={`Filtrar por ${option.label}`}
                                 >
                                     {option.label}
                                 </button>
@@ -567,7 +597,7 @@ export default function EmailInbox({
             </div>
 
             {/* Email List */}
-            <div style={{ maxHeight: 'calc(100vh - 500px)', overflowY: 'auto' }}>
+            <div style={{ maxHeight: 'calc(100vh - 500px)', overflowY: 'auto' }} role="list" aria-label="Listado de correos">
                 {loading ? (
                     <div style={{ padding: 'var(--spacing-8)', textAlign: 'center' }}>
                         <div className="skeleton" style={{ height: '60px', marginBottom: 'var(--spacing-3)' }} />
@@ -595,7 +625,7 @@ export default function EmailInbox({
                         No hay correos que coincidan con los filtros
                     </div>
                 ) : (
-                    sortedChanges.map((change) => {
+                    paginatedChanges.map((change) => {
                         const { date, time } = formatDate(change.created_at);
                         const isImportant = change.importance === 'IMPORTANT';
                         const isUnread = change.status === 'NEW' || change.status === 'PENDING';
@@ -623,6 +653,15 @@ export default function EmailInbox({
                                 onMouseLeave={(e) => {
                                     if (!isSelected) {
                                         e.currentTarget.style.backgroundColor = isUnread ? 'var(--secondary)' : 'var(--card)';
+                                    }
+                                }}
+                                role="listitem"
+                                tabIndex={0}
+                                aria-label={`${getHeadlineDisplay(change)}. ${getInstitutionDisplay(change)}. Fecha ${date} ${time}`}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        onSelectChange(change);
                                     }
                                 }}
                             >
@@ -749,6 +788,59 @@ export default function EmailInbox({
                     })
                 )}
             </div>
+
+            {/* Pagination */}
+            {sortedChanges.length > 0 && (
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 'var(--spacing-4) var(--spacing-5)',
+                        borderTop: '1px solid var(--border-light)',
+                        gap: 'var(--spacing-3)',
+                    }}
+                    aria-live="polite"
+                >
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                        Mostrando {startEntry} - {endEntry} de {sortedChanges.length}
+                    </span>
+                    <div style={{ display: 'flex', gap: 'var(--spacing-2)' }}>
+                        <button
+                            type="button"
+                            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                            disabled={page === 1}
+                            className="button"
+                            style={{
+                                padding: 'var(--spacing-2) var(--spacing-3)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-light)',
+                                backgroundColor: 'var(--card)',
+                                cursor: page === 1 ? 'not-allowed' : 'pointer',
+                            }}
+                            aria-label="Página anterior"
+                        >
+                            Anterior
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                            disabled={page === totalPages}
+                            className="button"
+                            style={{
+                                padding: 'var(--spacing-2) var(--spacing-3)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-light)',
+                                backgroundColor: 'var(--card)',
+                                cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                            }}
+                            aria-label="Página siguiente"
+                        >
+                            Siguiente
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
