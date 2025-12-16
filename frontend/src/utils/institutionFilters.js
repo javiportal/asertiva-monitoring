@@ -29,13 +29,14 @@ export function filterInstitutions(institutions, countryFilter, searchQuery) {
 
   return institutions.filter((institution) => {
     const matchesCountry = countryFilter
-      ? institution.countryCode.toLowerCase() === countryFilter.toLowerCase()
+      ? (institution.countryCode || '').toLowerCase() === countryFilter.toLowerCase()
       : true;
 
     const countryName = COUNTRY_NAMES[institution.countryCode] || '';
     const searchableText = normalizeText(
-      `${institution.name} ${institution.id} ${institution.type} ${countryName}`,
+      `${institution.name} ${institution.id} ${institution.type} ${countryName}`
     );
+
     const matchesQuery = queryTerms.length
       ? queryTerms.every((term) => searchableText.includes(term))
       : true;
@@ -43,3 +44,4 @@ export function filterInstitutions(institutions, countryFilter, searchQuery) {
     return matchesCountry && matchesQuery;
   });
 }
+
