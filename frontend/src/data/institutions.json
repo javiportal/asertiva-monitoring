@@ -1,0 +1,28 @@
+[
+  { "id": "csj-sv", "name": "Corte Suprema de Justicia", "type": "Institución Judicial", "countryCode": "SV" },
+  { "id": "cco-sv", "name": "Corte de Cuentas de la República", "type": "Órgano de Control", "countryCode": "SV" },
+  { "id": "tse-sv", "name": "Tribunal Supremo Electoral", "type": "Autoridad Electoral", "countryCode": "SV" },
+  { "id": "al-sv", "name": "Asamblea Legislativa", "type": "Órgano Legislativo", "countryCode": "SV" },
+
+  { "id": "csj-gt", "name": "Corte Suprema de Justicia", "type": "Institución Judicial", "countryCode": "GT" },
+  { "id": "cc-gt", "name": "Corte de Constitucionalidad", "type": "Institución Judicial", "countryCode": "GT" },
+  { "id": "tse-gt", "name": "Tribunal Supremo Electoral", "type": "Autoridad Electoral", "countryCode": "GT" },
+  { "id": "cong-gt", "name": "Congreso de la República", "type": "Órgano Legislativo", "countryCode": "GT" },
+
+  { "id": "csj-hn", "name": "Corte Suprema de Justicia", "type": "Institución Judicial", "countryCode": "HN" },
+  { "id": "cne-hn", "name": "Consejo Nacional Electoral", "type": "Autoridad Electoral", "countryCode": "HN" },
+  { "id": "cong-hn", "name": "Congreso Nacional", "type": "Órgano Legislativo", "countryCode": "HN" },
+
+  { "id": "cc-co", "name": "Corte Constitucional", "type": "Institución Judicial", "countryCode": "CO" },
+  { "id": "ce-co", "name": "Consejo de Estado", "type": "Institución Judicial", "countryCode": "CO" },
+  { "id": "cne-co", "name": "Consejo Nacional Electoral", "type": "Autoridad Electoral", "countryCode": "CO" },
+  { "id": "cong-co", "name": "Congreso de la República", "type": "Órgano Legislativo", "countryCode": "CO" },
+
+  { "id": "tc-pe", "name": "Tribunal Constitucional", "type": "Institución Judicial", "countryCode": "PE" },
+  { "id": "jne-pe", "name": "Jurado Nacional de Elecciones", "type": "Autoridad Electoral", "countryCode": "PE" },
+  { "id": "cong-pe", "name": "Congreso de la República", "type": "Órgano Legislativo", "countryCode": "PE" },
+
+  { "id": "scjn-mx", "name": "Suprema Corte de Justicia de la Nación", "type": "Institución Judicial", "countryCode": "MX" },
+  { "id": "ine-mx", "name": "Instituto Nacional Electoral", "type": "Autoridad Electoral", "countryCode": "MX" },
+  { "id": "cd-mx", "name": "Cámara de Diputados", "type": "Órgano Legislativo", "countryCode": "MX" }
+]
