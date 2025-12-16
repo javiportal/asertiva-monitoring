@@ -13,18 +13,24 @@ const COUNTRY_NAMES = {
   HN: 'honduras',
   PE: 'peru',
   MX: 'mexico',
+  INTERNATIONAL: 'tendencias internacionales',
+  LEGISLATIVE: 'monitoreo legislativo',
 };
 
-function normalizeText(text) {
+export function normalizeInstitutionText(text) {
   return (text || '')
+    .toString()
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function filterInstitutions(institutions, countryFilter, searchQuery) {
-  const normalizedQuery = normalizeText(searchQuery);
+  const normalizedQuery = normalizeInstitutionText(searchQuery);
   const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
 
   return institutions.filter((institution) => {
@@ -33,7 +39,7 @@ export function filterInstitutions(institutions, countryFilter, searchQuery) {
       : true;
 
     const countryName = COUNTRY_NAMES[institution.countryCode] || '';
-    const searchableText = normalizeText(
+    const searchableText = normalizeInstitutionText(
       `${institution.name} ${institution.id} ${institution.type} ${countryName}`
     );
 
@@ -44,4 +50,3 @@ export function filterInstitutions(institutions, countryFilter, searchQuery) {
     return matchesCountry && matchesQuery;
   });
 }
-
