@@ -1,5 +1,6 @@
 // InstitutionCheckboxes.tsx - Sidebar with grouped institution checkboxes
 import { Building2 } from 'lucide-react';
+import institutionsData from '../data/institutions.json';
 
 export type Institution = {
     id: string;
@@ -172,18 +173,4 @@ export default function InstitutionCheckboxes({
 }
 
 // Default institutions data
-export const defaultInstitutions: Institution[] = [
-    // Institución Judicial
-    { id: 'csj-sv', name: 'Corte Suprema de Justicia', type: 'Institución Judicial', countryCode: 'SV' },
-    { id: 'cc-gt', name: 'Corte de Constitucionalidad', type: 'Institución Judicial', countryCode: 'GT' },
-    { id: 'csj-hn', name: 'Corte Suprema de Justicia', type: 'Institución Judicial', countryCode: 'HN' },
-    { id: 'cco-sv', name: 'Corte Constitucional', type: 'Institución Judicial', countryCode: 'SV' },
-    { id: 'tc-pe', name: 'Tribunal Constitucional', type: 'Institución Judicial', countryCode: 'PE' },
-    { id: 'scj-mx', name: 'Suprema Corte de Justicia', type: 'Institución Judicial', countryCode: 'MX' },
-    // Agencia Estatal
-    { id: 'tse-sv', name: 'Tribunal Supremo Electoral', type: 'Agencia Estatal', countryCode: 'SV' },
-    { id: 'tse-gt', name: 'Tribunal Supremo Electoral', type: 'Agencia Estatal', countryCode: 'GT' },
-    // Órgano Legislativo
-    { id: 'cd-sv', name: 'Cámara de Diputados', type: 'Órgano Legislativo', countryCode: 'SV' },
-    { id: 'cong-gt', name: 'Congreso de la República', type: 'Órgano Legislativo', countryCode: 'GT' },
-];
+export const defaultInstitutions: Institution[] = institutionsData;
