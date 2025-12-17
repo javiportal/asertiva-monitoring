@@ -14,7 +14,16 @@ class AIFilterError(Exception):
     pass
 
 
-def classify_change(title: str | None, content: str, url: str | None = None) -> Dict:
+def classify_change(
+    title: str | None,
+    diff_text: str,
+    url: str | None = None,
+    current_snippet: str | None = None,
+    previous_text: str | None = None,
+    current_text: str | None = None,
+    task_name: str | None = None,
+    timestamp: str | None = None,
+) -> Dict:
     """
     Llama al servicio AI Filter y devuelve un dict con:
       - importance
@@ -26,8 +35,13 @@ def classify_change(title: str | None, content: str, url: str | None = None) -> 
     """
     payload = {
         "title": title,
-        "content": content,
+        "diff_text": diff_text,
+        "current_snippet": current_snippet,
+        "previous_text": previous_text,
+        "current_text": current_text,
         "url": url,
+        "task_name": task_name,
+        "timestamp": timestamp,
     }
 
     url_endpoint = f"{AI_FILTER_BASE_URL}/classify"
@@ -48,4 +62,3 @@ def classify_change(title: str | None, content: str, url: str | None = None) -> 
         "source_name": data.get("source_name"),
         "source_country": data.get("source_country"),
     }
-

@@ -1,4 +1,5 @@
 import os
+import json
 import datetime as dt
 from typing import List, Dict, Optional
 
@@ -94,16 +95,8 @@ def get_recent_notifications(
 def get_recent_changes_real(hours_back: int = 24) -> List[Dict]:
     """
     Envuelve get_recent_notifications y devuelve una lista de cambios en el
-    formato que espera el ingestor:
-        {
-            "wachet_id": str,
-            "url": str,
-            "title": str,
-            "content": str,
-            "timestamp": str (ISO)
-        }
-    Como no sabemos aún el esquema exacto, guardamos la notificación completa en content.
-    Luego ajustamos este mapeo al ver la estructura real.
+    formato que espera el ingestor. Toma los campos relevantes de la notificación
+    real de Wachete (comparand/current) y conserva la notificación completa.
     """
     now = dt.datetime.utcnow()
     from_time = now - dt.timedelta(hours=hours_back)
@@ -113,7 +106,6 @@ def get_recent_changes_real(hours_back: int = 24) -> List[Dict]:
 
     changes: List[Dict] = []
     for n in notifs:
-        # Aquí hacemos conjeturas razonables y dejamos TODO el JSON en content:
         wachet_id = str(
             n.get("taskId")
             or n.get("wachetId")
@@ -126,18 +118,27 @@ def get_recent_changes_real(hours_back: int = 24) -> List[Dict]:
             or n.get("pageUrl")
             or ""
         )
+        task_name = (
+            n.get("taskName")
+            or n.get("name")
+            or n.get("task", {}).get("name")
+            or None
+        )
         title = (
             n.get("title")
-            or n.get("name")
+            or task_name
             or f"Cambio en wachet {wachet_id}"
         )
-        # Guardamos el JSON completo como texto para no perder información
-        import json
+        previous_text = n.get("comparand") or ""
+        current_text = n.get("current") or ""
+        notification_id = str(n.get("id")) if n.get("id") is not None else None
 
-        content = json.dumps(n, ensure_ascii=False)
+        # Guardamos el JSON completo como texto para compatibilidad con UI legacy
+        raw_content = json.dumps(n, ensure_ascii=False)
 
         timestamp = (
-            n.get("date")
+            n.get("timestamp")
+            or n.get("date")
             or n.get("createdAt")
             or n.get("time")
             or now.isoformat()
@@ -148,7 +149,12 @@ def get_recent_changes_real(hours_back: int = 24) -> List[Dict]:
                 "wachet_id": wachet_id,
                 "url": url,
                 "title": title,
-                "content": content,
+                "previous_text": previous_text,
+                "current_text": current_text,
+                "raw_content": raw_content,
+                "wachete_notification_id": notification_id,
+                "task_name": task_name,
+                "raw_notification": n,
                 "timestamp": timestamp,
             }
         )

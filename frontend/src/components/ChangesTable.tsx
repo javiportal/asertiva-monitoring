@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react';
 export type Change = {
     id: number;
     wachet_id: string;
+    wachete_notification_id?: string | null;
     url: string | null;
     title: string | null;
     importance: string | null;
@@ -13,6 +14,10 @@ export type Change = {
     source_country: string | null;
     status: string;
     raw_content: string | null;
+    raw_notification?: unknown;
+    previous_text?: string | null;
+    current_text?: string | null;
+    diff_text?: string | null;
     created_at: string;
 };
 
