@@ -14,8 +14,13 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class ChangeInput(BaseModel):
     title: str | None = None
-    content: str
+    diff_text: str
+    current_snippet: str | None = None
+    previous_text: str | None = None
+    current_text: str | None = None
     url: str | None = None
+    task_name: str | None = None
+    timestamp: str | None = None
 
 
 class ChangeOutput(BaseModel):
@@ -42,7 +47,14 @@ def _build_prompt(change: ChangeInput) -> str:
     """
     title = change.title or "(sin título)"
     url = change.url or "(sin URL)"
-    content = change.content
+    task_name = change.task_name or "(sin tarea)"
+    timestamp = change.timestamp or "(sin timestamp)"
+    diff_text = change.diff_text or ""
+    current_snippet = change.current_snippet or ""
+    # Pequeño contexto opcional si el diff viene vacío
+    snippet_fallback = current_snippet
+    if not snippet_fallback and change.current_text:
+        snippet_fallback = (change.current_text or "")[:800]
 
     return f"""
 Eres un analista legal y regulatorio que trabaja para ASERTIVA.
@@ -82,9 +94,14 @@ Ahora analiza este cambio:
 
 Título: {title}
 URL: {url}
+Tarea: {task_name}
+Fecha/hora: {timestamp}
 
-Contenido:
-\"\"\"{content}\"\"\"
+Cambios detectados (diff):
+\"\"\"{diff_text}\"\"\"
+
+Contexto adicional (snippet de la versión nueva):
+\"\"\"{snippet_fallback}\"\"\"
 """.strip()
 
 

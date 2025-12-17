@@ -12,6 +12,9 @@ export interface Change {
     status: ChangeStatus;
     aiScore: number | null;
     aiReason: string | null;
+    previousText?: string | null;
+    currentText?: string | null;
+    diffText?: string | null;
     createdAt: string;
 }
 
@@ -52,6 +55,9 @@ export async function fetchChanges(filters: ChangeFilters = {}): Promise<Change[
         status: item.status,
         aiScore: item.ai_score,
         aiReason: item.ai_reason,
+        previousText: item.previous_text,
+        currentText: item.current_text,
+        diffText: item.diff_text,
         createdAt: item.created_at,
     }));
 }

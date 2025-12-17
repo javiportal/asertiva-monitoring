@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw } from 'lucide-react';
 import { type Change } from './ChangesTable';
 
@@ -14,6 +15,95 @@ export default function DetailPanel({
     onValidate,
     onMoveToPending
 }: DetailPanelProps) {
+    const [showFullPrevious, setShowFullPrevious] = useState(false);
+    const [showFullCurrent, setShowFullCurrent] = useState(false);
+    const changeId = change?.id;
+
+    useEffect(() => {
+        setShowFullPrevious(false);
+        setShowFullCurrent(false);
+    }, [changeId]);
+
+    const fallbackDiff = useMemo(() => {
+        if (!change) return null;
+        if (change.diff_text) return change.diff_text;
+        const prev = change.previous_text || '';
+        const curr = change.current_text || '';
+        if (!prev && !curr) return null;
+
+        const prevLines = prev.split(/\r?\n/);
+        const currLines = curr.split(/\r?\n/);
+        const maxLines = Math.max(prevLines.length, currLines.length);
+        const diff: string[] = ['--- previous', '+++ current'];
+        for (let i = 0; i < maxLines; i++) {
+            const a = prevLines[i];
+            const b = currLines[i];
+            if (a === b) {
+                diff.push(` ${a ?? ''}`);
+                continue;
+            }
+            if (a !== undefined) diff.push(`-${a}`);
+            if (b !== undefined) diff.push(`+${b}`);
+        }
+        return diff.join('\n');
+    }, [change?.diff_text, change?.previous_text, change?.current_text, changeId]);
+
+    const parsedDiff = useMemo(() => {
+        const source = fallbackDiff;
+        if (!source || !source.trim()) return null;
+        return source.split('\n').map((line) => {
+            let type: 'context' | 'add' | 'remove' | 'meta' = 'context';
+            if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++')) {
+                type = 'meta';
+            } else if (line.startsWith('+')) {
+                type = 'add';
+            } else if (line.startsWith('-')) {
+                type = 'remove';
+            }
+            return { type, value: line };
+        });
+    }, [fallbackDiff]);
+
+    const renderTextColumn = (
+        label: string,
+        text: string | null | undefined,
+        expanded: boolean,
+        onToggle: () => void
+    ) => {
+        const cleanText = text?.trim() ?? '';
+        const needsToggle = cleanText.length > 1200;
+        return (
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{label}</div>
+                <div
+                    style={{
+                        border: '1px solid var(--border-light)',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'white',
+                        padding: 'var(--spacing-3)',
+                        maxHeight: expanded || !needsToggle ? 'none' : '240px',
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        color: cleanText ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        fontSize: 'var(--font-size-sm)',
+                        lineHeight: 1.5,
+                    }}
+                >
+                    {cleanText || 'No disponible'}
+                </div>
+                {needsToggle && (
+                    <button
+                        className="btn btn-ghost"
+                        style={{ alignSelf: 'flex-start', padding: '4px 8px' }}
+                        onClick={onToggle}
+                    >
+                        {expanded ? 'Ver menos' : 'Ver más'}
+                    </button>
+                )}
+            </div>
+        );
+    };
+
     if (!change) return null;
 
     const isImportant = change.importance === 'IMPORTANT';
@@ -176,35 +266,75 @@ export default function DetailPanel({
                         </section>
                     )}
 
-                    {/* Original Content Placeholder */}
+                    {/* Antes vs Después */}
                     <section style={{ marginBottom: 'var(--spacing-6)' }}>
                         <h3 style={{ marginBottom: 'var(--spacing-3)' }}>
                             Contenido original
                         </h3>
-                        <div style={{
-                            padding: 'var(--spacing-4)',
-                            backgroundColor: 'white',
-                            border: '1px solid var(--border-light)',
-                            borderRadius: 'var(--radius-md)',
-                            fontSize: 'var(--font-size-sm)',
-                            color: 'var(--text-secondary)',
-                            fontStyle: 'italic',
-                        }}>
-                            El contenido completo estará disponible próximamente.
-                            {change.url && (
-                                <>
-                                    {' '}Mientras tanto, puedes{' '}
-                                    <a
-                                        href={change.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{ color: 'var(--blue-night)', fontWeight: 500 }}
-                                    >
-                                        ver la fuente original
-                                    </a>.
-                                </>
-                            )}
+                        <div style={{ display: 'flex', gap: 'var(--spacing-4)', flexWrap: 'wrap' }}>
+                            {renderTextColumn('Antes', change.previous_text, showFullPrevious, () => setShowFullPrevious((v) => !v))}
+                            {renderTextColumn('Después', change.current_text, showFullCurrent, () => setShowFullCurrent((v) => !v))}
                         </div>
+                    </section>
+
+                    {/* Diff detected */}
+                    <section style={{ marginBottom: 'var(--spacing-6)' }}>
+                        <h3 style={{ marginBottom: 'var(--spacing-3)' }}>
+                            Cambios detectados
+                        </h3>
+                        {parsedDiff && parsedDiff.length > 0 ? (
+                            <div
+                                style={{
+                                    border: '1px solid var(--border-light)',
+                                    borderRadius: 'var(--radius-md)',
+                                    backgroundColor: 'white',
+                                    fontFamily: 'monospace',
+                                    fontSize: '13px',
+                                    lineHeight: 1.5,
+                                    maxHeight: '320px',
+                                    overflowY: 'auto',
+                                }}
+                            >
+                                {parsedDiff.map((line, idx) => {
+                                    let bg = 'transparent';
+                                    let color = 'var(--text-primary)';
+                                    if (line.type === 'add') {
+                                        bg = '#e8f5e9';
+                                        color = '#1b5e20';
+                                    } else if (line.type === 'remove') {
+                                        bg = '#fdecea';
+                                        color = '#c62828';
+                                    } else if (line.type === 'meta') {
+                                        bg = 'var(--gray-50)';
+                                        color = 'var(--text-secondary)';
+                                    }
+                                    return (
+                                        <div
+                                            key={`${idx}-${line.type}-${line.value.slice(0, 20)}`}
+                                            style={{
+                                                padding: '4px 8px',
+                                                backgroundColor: bg,
+                                                color,
+                                                borderBottom: '1px solid var(--border-light)',
+                                            }}
+                                        >
+                                            {line.value || ' '}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div style={{
+                                padding: 'var(--spacing-4)',
+                                backgroundColor: 'white',
+                                border: '1px solid var(--border-light)',
+                                borderRadius: 'var(--radius-md)',
+                                color: 'var(--text-secondary)',
+                                fontSize: 'var(--font-size-sm)',
+                            }}>
+                                No se pudo calcular diff para este registro.
+                            </div>
+                        )}
                     </section>
 
                     {/* Future: Affected Clients */}

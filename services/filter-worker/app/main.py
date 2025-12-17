@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 
 from sqlalchemy import text
@@ -5,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .ai_client import classify_change, AIFilterError
+from .diff_utils import build_diff, is_trivial_diff
 
 
 @contextmanager
@@ -23,7 +25,16 @@ def fetch_new_changes(db: Session, limit: int = 50):
     rows = db.execute(
         text(
             """
-            SELECT id, title, raw_content, url
+            SELECT
+                id,
+                title,
+                raw_content,
+                raw_notification,
+                previous_text,
+                current_text,
+                diff_text,
+                url,
+                created_at
             FROM wachet_changes
             WHERE status = 'NEW'
             ORDER BY created_at ASC
@@ -33,6 +44,22 @@ def fetch_new_changes(db: Session, limit: int = 50):
         {"limit": limit},
     ).mappings().all()
     return rows
+
+
+def load_notification(raw_notification, raw_content: str | None):
+    if isinstance(raw_notification, dict):
+        return raw_notification
+    if isinstance(raw_notification, str):
+        try:
+            return json.loads(raw_notification)
+        except json.JSONDecodeError:
+            return {}
+    if raw_content:
+        try:
+            return json.loads(raw_content)
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def classify_pending_changes(batch_size: int = 50):
@@ -49,23 +76,91 @@ def classify_pending_changes(batch_size: int = 50):
             for row in rows:
                 change_id = row["id"]
                 title = row["title"]
-                content = row["raw_content"] or ""
                 url = row["url"]
+                prev = row.get("previous_text") or ""
+                curr = row.get("current_text") or ""
+                diff_text = row.get("diff_text") or build_diff(prev, curr)
+                raw_notification = load_notification(
+                    row.get("raw_notification"), row.get("raw_content")
+                )
+                task_name = (
+                    raw_notification.get("taskName")
+                    or raw_notification.get("name")
+                    or raw_notification.get("task", {}).get("name")
+                    or title
+                )
+                timestamp = (
+                    raw_notification.get("timestamp")
+                    or raw_notification.get("date")
+                    or raw_notification.get("createdAt")
+                    or raw_notification.get("time")
+                )
+                created_at = row.get("created_at")
+                if not timestamp and created_at:
+                    try:
+                        timestamp = created_at.isoformat()
+                    except AttributeError:
+                        timestamp = str(created_at)
 
-                try:
-                    result = classify_change(title=title, content=content, url=url)
-                except AIFilterError as e:
-                    print(f"[ERROR] Falló clasificación para id={change_id}: {e}")
-                    # Si quieres, podrías marcar status='ERROR' aquí
+                text_fallback = ""
+                raw_content = row.get("raw_content") or ""
+                if not curr and raw_content:
+                    try:
+                        parsed_raw = json.loads(raw_content)
+                        text_fallback = (
+                            parsed_raw.get("current")
+                            or parsed_raw.get("comparand")
+                            or parsed_raw.get("content")
+                            or parsed_raw.get("html")
+                            or raw_content
+                        )
+                    except json.JSONDecodeError:
+                        text_fallback = raw_content
+
+                # Regla previa: si parece un cambio numérico trivial, lo marcamos sin IA
+                if diff_text and is_trivial_diff(diff_text):
                     db.execute(
                         text(
                             """
                             UPDATE wachet_changes
-                            SET status = 'ERROR', updated_at = NOW()
+                            SET
+                                importance = 'NOT_IMPORTANT',
+                                ai_score = 0.05,
+                                ai_reason = 'Cambio menor (contador/fecha). Clasificado automáticamente.',
+                                diff_text = COALESCE(diff_text, :diff_text),
+                                status = 'FILTERED',
+                                updated_at = NOW()
                             WHERE id = :id
                             """
                         ),
-                        {"id": change_id},
+                        {"id": change_id, "diff_text": diff_text},
+                    )
+                    updated += 1
+                    processed += 1
+                    continue
+
+                try:
+                    result = classify_change(
+                        title=title,
+                        diff_text=diff_text,
+                        current_snippet=(curr or text_fallback)[:800] if (curr or text_fallback) else None,
+                        previous_text=prev or None,
+                        current_text=curr or None,
+                        url=url,
+                        task_name=task_name,
+                        timestamp=timestamp,
+                    )
+                except AIFilterError as e:
+                    print(f"[ERROR] Falló clasificación para id={change_id}: {e}")
+                    db.execute(
+                        text(
+                            """
+                            UPDATE wachet_changes
+                            SET status = 'ERROR', updated_at = NOW(), diff_text = COALESCE(diff_text, :diff_text)
+                            WHERE id = :id
+                            """
+                        ),
+                        {"id": change_id, "diff_text": diff_text},
                     )
                     errors += 1
                     continue
@@ -85,6 +180,7 @@ def classify_pending_changes(batch_size: int = 50):
                             importance = :importance,
                             ai_score = :score,
                             ai_reason = :reason,
+                            diff_text = COALESCE(diff_text, :diff_text),
                             headline = :headline,
                             source_name = :source_name,
                             source_country = :source_country,
@@ -93,16 +189,17 @@ def classify_pending_changes(batch_size: int = 50):
                         WHERE id = :id
                         """
                     ),
-                    {
-                        "id": change_id,
-                        "importance": importance,
-                        "score": score,
-                        "reason": reason,
-                        "headline": headline,
-                        "source_name": source_name,
-                        "source_country": source_country,
-                    },
-                )
+                        {
+                            "id": change_id,
+                            "importance": importance,
+                            "score": score,
+                            "reason": reason,
+                            "diff_text": diff_text,
+                            "headline": headline,
+                            "source_name": source_name,
+                            "source_country": source_country,
+                        },
+                    )
                 updated += 1
                 processed += 1
 
