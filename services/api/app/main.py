@@ -1,11 +1,13 @@
 import difflib
 import json
 import logging
+import time
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -30,50 +32,157 @@ app.add_middleware(
 # Estados permitidos
 ALLOWED_STATUSES = {"NEW", "PENDING", "FILTERED", "VALIDATED", "PUBLISHED", "DISCARDED"}
 OPTIONAL_CHANGE_COLUMNS = ("headline", "source_name", "source_country")
+# Diff columns added by migration 002 - may be missing in older DBs
+OPTIONAL_DIFF_COLUMNS = ("previous_text", "current_text", "diff_text")
+
+# ---------- Response Models (API Contract) ----------
 
 
-def get_existing_columns(db: Session) -> set[str]:
+class WachetChangeItem(BaseModel):
+    """Single change item returned by the API."""
+
+    id: int
+    wachet_id: Optional[str] = None
+    wachete_notification_id: Optional[str] = None
+    url: Optional[str] = None
+    title: Optional[str] = None
+    importance: Optional[str] = None
+    ai_score: Optional[float] = None
+    ai_reason: Optional[str] = None
+    status: Optional[str] = None
+    headline: Optional[str] = None
+    source_name: Optional[str] = None
+    source_country: Optional[str] = None
+    previous_text: Optional[str] = None
+    current_text: Optional[str] = None
+    diff_text: Optional[str] = None
+    raw_content: Optional[str] = None
+    raw_notification: Optional[Any] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WachetChangesResponse(BaseModel):
+    """Response for /wachet-changes endpoint."""
+
+    items: list[WachetChangeItem]
+    total: int
+
+
+class SummaryItem(BaseModel):
+    """Single summary row."""
+
+    status: Optional[str] = None
+    importance: Optional[str] = None
+    total: int
+
+
+class SummaryResponse(BaseModel):
+    """Response for /wachet-changes/summary endpoint."""
+
+    items: list[SummaryItem]
+
+
+class HealthResponse(BaseModel):
+    """Response for /health endpoint."""
+
+    status: str
+    version: str = "1.0.0"
+
+
+class DbHealthResponse(BaseModel):
+    """Response for /db-health endpoint."""
+
+    db_ok: bool
+    latency_ms: Optional[float] = None
+
+
+class CountResponse(BaseModel):
+    """Response for /wachet-changes/count endpoint."""
+
+    count: int
+
+
+class UpdateResponse(BaseModel):
+    """Response for PATCH /wachet-changes/{id}."""
+
+    ok: bool
+    id: int
+    status: str
+
+
+# ---------- Column Cache ----------
+
+_columns_cache: dict[str, tuple[set[str], float]] = {}
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+
+def get_existing_columns(db: Session, use_cache: bool = True) -> set[str]:
     """
     Returns the column names for wachet_changes in the current DB.
     Supports PostgreSQL (information_schema) and SQLite (PRAGMA).
+    Results are cached for _CACHE_TTL_SECONDS to avoid repeated schema queries.
     """
+    global _columns_cache
+
+    dialect = db.bind.dialect.name if db.bind else "unknown"
+    cache_key = f"wachet_changes_{dialect}"
+
+    # Check cache
+    if use_cache and cache_key in _columns_cache:
+        cached_cols, cached_time = _columns_cache[cache_key]
+        if time.time() - cached_time < _CACHE_TTL_SECONDS:
+            return cached_cols
+
     try:
-        dialect = db.bind.dialect.name if db.bind else ""
         if dialect == "sqlite":
             rows = db.execute(text("PRAGMA table_info('wachet_changes')")).all()
-            return {row[1] for row in rows}
+            cols = {row[1] for row in rows}
+        else:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'wachet_changes'
+                    """
+                )
+            ).scalars()
+            cols = set(rows)
 
-        rows = db.execute(
-            text(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = current_schema()
-                  AND table_name = 'wachet_changes'
-                """
-            )
-        ).scalars()
-        return set(rows)
+        # Update cache
+        _columns_cache[cache_key] = (cols, time.time())
+        return cols
     except Exception:
         logger.exception("No se pudieron leer las columnas de wachet_changes")
         return set()
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health():
-    return {"status": "ok"}
+    return HealthResponse(status="ok", version="1.0.0")
 
 
-@app.get("/db-health")
+@app.get("/db-health", response_model=DbHealthResponse)
 def db_health(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT 1")).scalar()
-    return {"db_ok": bool(result)}
+    start = time.time()
+    try:
+        result = db.execute(text("SELECT 1")).scalar()
+        latency_ms = (time.time() - start) * 1000
+        return DbHealthResponse(db_ok=bool(result), latency_ms=round(latency_ms, 2))
+    except Exception:
+        latency_ms = (time.time() - start) * 1000
+        return DbHealthResponse(db_ok=False, latency_ms=round(latency_ms, 2))
 
 
-@app.get("/wachet-changes/count")
+@app.get("/wachet-changes/count", response_model=CountResponse)
 def count_wachet_changes(db: Session = Depends(get_db)):
     result = db.execute(text("SELECT COUNT(*) FROM wachet_changes")).scalar()
-    return {"count": result}
+    return CountResponse(count=result or 0)
 
 
 def normalize_raw_notification(value: Any) -> Any:
@@ -98,7 +207,147 @@ def normalize_raw_notification(value: Any) -> Any:
     return value
 
 
-@app.get("/wachet-changes")
+def extract_before_after_from_raw(raw_notification: Any) -> tuple[str | None, str | None]:
+    """
+    Try to extract before/after text from raw_notification using common field names.
+    Returns (before_text, after_text) tuple.
+    """
+    if not isinstance(raw_notification, dict):
+        return None, None
+
+    # Common field names for before/after content (Wachete uses comparand/current)
+    before_keys = ("comparand", "before", "previous", "old", "content_before", "previous_text")
+    after_keys = ("current", "after", "new", "content_after", "current_text")
+
+    before_text = None
+    after_text = None
+
+    for key in before_keys:
+        val = raw_notification.get(key)
+        if val and isinstance(val, str) and val.strip():
+            before_text = val.strip()
+            break
+
+    for key in after_keys:
+        val = raw_notification.get(key)
+        if val and isinstance(val, str) and val.strip():
+            after_text = val.strip()
+            break
+
+    return before_text, after_text
+
+
+def compute_diff(prev: str, curr: str) -> str | None:
+    """Compute unified diff between previous and current text."""
+    diff = "\n".join(
+        difflib.unified_diff(
+            prev.splitlines(),
+            curr.splitlines(),
+            fromfile="previous",
+            tofile="current",
+            lineterm="",
+        )
+    )
+    return diff if diff.strip() else None
+
+
+def persist_computed_fields(
+    db: Session,
+    change_id: int,
+    previous_text: str | None,
+    current_text: str | None,
+    diff_text: str | None,
+    existing_columns: set[str],
+) -> None:
+    """
+    Persist computed previous_text, current_text, diff_text back to DB.
+    Only updates fields if they are empty in DB and column exists.
+    """
+    if "diff_text" not in existing_columns:
+        return  # Migration not applied yet
+
+    updates: list[str] = []
+    params: dict[str, Any] = {"id": change_id}
+
+    if previous_text and "previous_text" in existing_columns:
+        updates.append("previous_text = COALESCE(NULLIF(previous_text, ''), :previous_text)")
+        params["previous_text"] = previous_text
+
+    if current_text and "current_text" in existing_columns:
+        updates.append("current_text = COALESCE(NULLIF(current_text, ''), :current_text)")
+        params["current_text"] = current_text
+
+    if diff_text and "diff_text" in existing_columns:
+        updates.append("diff_text = COALESCE(NULLIF(diff_text, ''), :diff_text)")
+        params["diff_text"] = diff_text
+
+    if not updates:
+        return
+
+    query = f"UPDATE wachet_changes SET {', '.join(updates)} WHERE id = :id"
+    try:
+        db.execute(text(query), params)
+        # Don't commit here - let caller handle transaction
+    except Exception:
+        logger.debug("Failed to persist computed fields for id=%s", change_id)
+
+
+def process_change_item(
+    row: dict,
+    db: Session | None = None,
+    existing_columns: set[str] | None = None,
+    persist: bool = False,
+) -> dict:
+    """
+    Process a single change row:
+    - Normalize raw_notification
+    - Derive previous_text/current_text from raw_notification if missing
+    - Compute diff_text if missing
+    - Optionally persist computed fields back to DB
+    """
+    item = dict(row)
+    raw_notif = normalize_raw_notification(item.get("raw_notification"))
+    item["raw_notification"] = raw_notif
+
+    # Get or derive previous/current text
+    prev = item.get("previous_text") or ""
+    curr = item.get("current_text") or ""
+    derived_prev = None
+    derived_curr = None
+
+    if not prev.strip() or not curr.strip():
+        derived_before, derived_after = extract_before_after_from_raw(raw_notif)
+        if not prev.strip() and derived_before:
+            item["previous_text"] = derived_before
+            derived_prev = derived_before
+            prev = derived_before
+        if not curr.strip() and derived_after:
+            item["current_text"] = derived_after
+            derived_curr = derived_after
+            curr = derived_after
+
+    # Compute diff if not present
+    computed_diff = None
+    if not item.get("diff_text"):
+        computed_diff = compute_diff(prev, curr)
+        item["diff_text"] = computed_diff
+
+    # Persist if enabled and we computed new values
+    if persist and db is not None and existing_columns is not None:
+        if derived_prev or derived_curr or computed_diff:
+            persist_computed_fields(
+                db=db,
+                change_id=item["id"],
+                previous_text=derived_prev,
+                current_text=derived_curr,
+                diff_text=computed_diff,
+                existing_columns=existing_columns,
+            )
+
+    return item
+
+
+@app.get("/wachet-changes", response_model=WachetChangesResponse)
 def list_changes(
     status: Optional[str] = None,
     importance: Optional[str] = None,
@@ -127,9 +376,6 @@ def list_changes(
         "status",
         "raw_content",
         "raw_notification",
-        "previous_text",
-        "current_text",
-        "diff_text",
         "created_at",
         "updated_at",
     ]
@@ -137,11 +383,19 @@ def list_changes(
     missing_columns: list[str] = []
     select_columns = base_columns.copy()
 
+    # Handle optional columns (headline, source_name, source_country)
     for col in OPTIONAL_CHANGE_COLUMNS:
         if col in existing_columns:
             select_columns.append(col)
         else:
-            # Fallback to NULL to avoid crashing if migration wasn't applied.
+            select_columns.append(f"NULL AS {col}")
+            missing_columns.append(col)
+
+    # Handle diff columns (previous_text, current_text, diff_text)
+    for col in OPTIONAL_DIFF_COLUMNS:
+        if col in existing_columns:
+            select_columns.append(col)
+        else:
             select_columns.append(f"NULL AS {col}")
             missing_columns.append(col)
 
@@ -183,34 +437,26 @@ def list_changes(
             detail="No se pudo consultar wachet_changes (revisa las migraciones de la tabla).",
         ) from exc
 
-    items = []
-    for r in rows:
-        item = dict(r)
-        item["raw_notification"] = normalize_raw_notification(
-            item.get("raw_notification")
+    items = [
+        process_change_item(
+            row=dict(r),
+            db=db,
+            existing_columns=existing_columns,
+            persist=True,  # Enable save-on-read for computed fields
         )
-        if not item.get("diff_text"):
-            prev = item.get("previous_text") or ""
-            curr = item.get("current_text") or ""
-            diff = "\n".join(
-                difflib.unified_diff(
-                    prev.splitlines(),
-                    curr.splitlines(),
-                    fromfile="previous",
-                    tofile="current",
-                    lineterm="",
-                )
-            )
-            item["diff_text"] = diff if diff.strip() else None
-        items.append(item)
+        for r in rows
+    ]
 
-    return {
-        "items": items,
-        "total": len(items),
-    }
+    # Best-effort commit for any persisted fields
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+    return WachetChangesResponse(items=items, total=len(items))
 
 
-@app.get("/wachet-changes/filtered")
+@app.get("/wachet-changes/filtered", response_model=WachetChangesResponse)
 def list_filtered_changes(
     importance: Optional[str] = None,
     search: Optional[str] = None,
@@ -220,6 +466,8 @@ def list_filtered_changes(
     Lista cambios con status = 'FILTERED' o 'PENDING' (legacy endpoint).
     Puedes usar /wachet-changes?status=FILTERED en su lugar.
     """
+    existing_columns = get_existing_columns(db)
+
     query = """
         SELECT id,
                wachet_id,
@@ -229,12 +477,13 @@ def list_filtered_changes(
                importance,
                ai_score,
                ai_reason,
-                status,
+               status,
+               raw_notification,
                previous_text,
                current_text,
                diff_text,
-                created_at,
-                updated_at
+               created_at,
+               updated_at
         FROM wachet_changes
         WHERE status IN ('FILTERED', 'PENDING')
     """
@@ -252,31 +501,26 @@ def list_filtered_changes(
     query += " ORDER BY created_at DESC LIMIT 100"
 
     rows = db.execute(text(query), params).mappings().all()
-    items = []
-    for r in rows:
-        item = dict(r)
-        if not item.get("diff_text"):
-            prev = item.get("previous_text") or ""
-            curr = item.get("current_text") or ""
-            diff = "\n".join(
-                difflib.unified_diff(
-                    prev.splitlines(),
-                    curr.splitlines(),
-                    fromfile="previous",
-                    tofile="current",
-                    lineterm="",
-                )
-            )
-            item["diff_text"] = diff if diff.strip() else None
-        items.append(item)
+    items = [
+        process_change_item(
+            row=dict(r),
+            db=db,
+            existing_columns=existing_columns,
+            persist=True,
+        )
+        for r in rows
+    ]
 
-    return {
-        "items": items,
-        "total": len(items),
-    }
+    # Best-effort commit for any persisted fields
+    try:
+        db.commit()
+    except Exception:
+        pass
+
+    return WachetChangesResponse(items=items, total=len(items))
 
 
-@app.get("/wachet-changes/summary")
+@app.get("/wachet-changes/summary", response_model=SummaryResponse)
 def summary_changes(db: Session = Depends(get_db)):
     """
     Resumen por status + importancia (para las cards del dashboard).
@@ -295,7 +539,7 @@ def summary_changes(db: Session = Depends(get_db)):
             """
         )
     ).mappings().all()
-    return {"items": [dict(r) for r in rows]}
+    return SummaryResponse(items=[SummaryItem(**dict(r)) for r in rows])
 
 
 # --------- Actualización de estado ---------
@@ -305,7 +549,7 @@ class ChangeUpdate(BaseModel):
     status: Optional[str] = None
 
 
-@app.patch("/wachet-changes/{change_id}")
+@app.patch("/wachet-changes/{change_id}", response_model=UpdateResponse)
 def update_wachet_change(
     change_id: int,
     payload: ChangeUpdate,
@@ -313,16 +557,16 @@ def update_wachet_change(
 ):
     """
     Actualiza el status de un cambio.
-    Soporta: NEW, PENDING, FILTERED, VALIDATED, PUBLISHED.
+    Soporta: NEW, PENDING, FILTERED, VALIDATED, PUBLISHED, DISCARDED.
     """
     if payload.status is None:
         raise HTTPException(status_code=400, detail="Debes enviar un status")
-    
-    # Validación opcional del status
+
+    # Validación del status
     if payload.status not in ALLOWED_STATUSES:
         raise HTTPException(
             status_code=400,
-            detail=f"Status no válido. Usa uno de: {', '.join(ALLOWED_STATUSES)}"
+            detail=f"Status no válido. Usa uno de: {', '.join(sorted(ALLOWED_STATUSES))}"
         )
 
     result = db.execute(
@@ -341,4 +585,4 @@ def update_wachet_change(
         raise HTTPException(status_code=404, detail="Cambio no encontrado")
 
     db.commit()
-    return {"ok": True, "id": change_id, "status": payload.status}
+    return UpdateResponse(ok=True, id=change_id, status=payload.status)

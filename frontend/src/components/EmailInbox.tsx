@@ -4,11 +4,14 @@ import { Mail, Search, Star, Building2, Calendar, Clock } from 'lucide-react';
 import institutionsCatalog from '../data/institutions.json';
 import { normalizeInstitutionText } from '../utils/institutionFilters.js';
 import { type Change } from './ChangesTable';
+import ErrorState from './ErrorState';
+import EmptyState from './EmptyState';
+import type { ApiError } from '../hooks/useChanges';
 
 type EmailInboxProps = {
     changes: Change[];
     loading: boolean;
-    error: string | null;
+    error: ApiError | null;
     searchQuery: string;
     onSearchChange: (query: string) => void;
     countryFilter: string | null;
@@ -17,6 +20,9 @@ type EmailInboxProps = {
     selectedInstitutions: string[];
     onSelectChange: (change: Change) => void;
     selectedChangeId: number | null;
+    onRetry?: () => void;
+    isRetrying?: boolean;
+    onClearFilters?: () => void;
 };
 
 type InstitutionCatalogItem = {
@@ -358,6 +364,9 @@ export default function EmailInbox({
     selectedInstitutions,
     onSelectChange,
     selectedChangeId,
+    onRetry,
+    isRetrying = false,
+    onClearFilters,
 }: EmailInboxProps) {
     const [localSearch, setLocalSearch] = useState(searchQuery);
     const [page, setPage] = useState(1);
@@ -641,25 +650,27 @@ export default function EmailInbox({
                         <div className="skeleton" style={{ height: '60px' }} />
                     </div>
                 ) : error ? (
-                    <div
-                        style={{
-                            padding: 'var(--spacing-8)',
-                            textAlign: 'center',
-                            color: 'var(--red-accent)',
-                        }}
-                    >
-                        Error al cargar datos: {error}
-                    </div>
+                    <ErrorState
+                        error={error}
+                        onRetry={onRetry}
+                        isRetrying={isRetrying}
+                    />
+                ) : changes.length === 0 ? (
+                    <EmptyState
+                        variant="no-data"
+                        onRefresh={onRetry}
+                    />
                 ) : sortedChanges.length === 0 ? (
-                    <div
-                        style={{
-                            padding: 'var(--spacing-8)',
-                            textAlign: 'center',
-                            color: 'var(--text-secondary)',
-                        }}
-                    >
-                        No hay correos que coincidan con los filtros
-                    </div>
+                    <EmptyState
+                        variant="filtered"
+                        hasFiltersApplied={
+                            !!localSearch ||
+                            !!countryFilter ||
+                            importanceFilter !== 'all' ||
+                            selectedInstitutions.length > 0
+                        }
+                        onClearFilters={onClearFilters}
+                    />
                 ) : (
                     paginatedChanges.map((change) => {
                         const { date, time } = formatDate(change.created_at);

@@ -12,7 +12,7 @@ export default defineConfig({
     // 🔁 Proxy: todo lo que empiece con /api va al backend en :8000
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://api:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''), // /api/x -> /x
       },

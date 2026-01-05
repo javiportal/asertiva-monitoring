@@ -1,5 +1,5 @@
 // App.tsx - Fully connected with real API data
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Header from "./components/Header";
 import SearchFiltersCard from "./components/SearchFiltersCard";
 import InstitutionCheckboxes, { defaultInstitutions } from "./components/InstitutionCheckboxes";
@@ -7,12 +7,7 @@ import EmailInbox from "./components/EmailInbox";
 import DetailPanel from "./components/DetailPanel";
 import Toast from "./components/Toast";
 import { type Change } from "./components/ChangesTable";
-
-type SummaryItem = {
-  status: string | null;
-  importance: string | null;
-  total: number;
-};
+import useChanges from "./hooks/useChanges";
 
 type ToastMessage = {
   id: number;
@@ -24,12 +19,9 @@ const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 function App() {
   // ---------------------------------------------------------------------------
-  // State - API Data
+  // State - API Data (using custom hook)
   // ---------------------------------------------------------------------------
-  const [changes, setChanges] = useState<Change[]>([]);
-  const [_summary, setSummary] = useState<SummaryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { changes, loading, error, refetch, isRetrying } = useChanges();
 
   // Global search filter (from SearchFiltersCard)
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
@@ -60,60 +52,6 @@ function App() {
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  // ---------------------------------------------------------------------------
-  // Fetch data from API
-  // ---------------------------------------------------------------------------
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const [changesRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/wachet-changes`),
-        fetch(`${API_BASE}/wachet-changes/summary`),
-      ]);
-
-      if (!changesRes.ok || !summaryRes.ok) {
-        throw new Error("Error al cargar datos de la API");
-      }
-
-      const [changesText, summaryText] = await Promise.all([
-        changesRes.text(),
-        summaryRes.text(),
-      ]);
-
-      console.log("RAW /wachet-changes:", changesText.slice(0, 300));
-      console.log("RAW /wachet-changes/summary:", summaryText.slice(0, 300));
-
-      let changesJson: any;
-      let summaryJson: any;
-
-      try {
-        changesJson = JSON.parse(changesText);
-        summaryJson = JSON.parse(summaryText);
-      } catch (parseErr) {
-        console.error("Error parseando JSON de la API:", parseErr);
-        throw new Error(
-          "La API respondió algo que no es JSON válido. Revisa que el backend en 8000 sea FastAPI."
-        );
-      }
-
-      setChanges(changesJson.items ?? []);
-      setSummary(summaryJson.items ?? []);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Error desconocido");
-      showToast("Error al cargar datos", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ---------------------------------------------------------------------------
   // Filtered changes based on global filters
@@ -214,7 +152,7 @@ function App() {
 
       showToast(`"${change.title}" marcado como revisado`, "success");
       setSelectedChange(null);
-      await fetchData();
+      await refetch();
     } catch (err) {
       console.error(err);
       showToast(
@@ -240,7 +178,7 @@ function App() {
 
       showToast(`"${change.title}" cambiado a pendientes`, "info");
       setSelectedChange(null);
-      await fetchData();
+      await refetch();
     } catch (err) {
       console.error(err);
       showToast(`No se pudo cambiar "${change.title}" a pendientes`, "error");
@@ -301,6 +239,9 @@ function App() {
             selectedInstitutions={selectedInstitutions}
             onSelectChange={handleSelectChange}
             selectedChangeId={selectedChange?.id ?? null}
+            onRetry={refetch}
+            isRetrying={isRetrying}
+            onClearFilters={handleClearFilters}
           />
         </div>
       </main>
