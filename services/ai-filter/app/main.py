@@ -1,14 +1,20 @@
+import json
 import os
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from openai import OpenAI
 
 # ---------- Config ----------
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY no está definida en el entorno")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ---------- Esquemas ----------
 
@@ -106,43 +112,60 @@ Contexto adicional (snippet de la versión nueva):
 
 
 def classify_with_llm(change: ChangeInput) -> ChangeOutput:
+    """
+    Calls OpenAI chat completions API with JSON mode to get structured classification.
+    """
     prompt = _build_prompt(change)
 
-    # Usamos Responses API con salida estructurada via JSON (simplificado)
-    from pydantic import BaseModel
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Eres un asistente que responde SOLO en JSON válido, sin markdown ni explicaciones adicionales."
+                },
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=500,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calling OpenAI: {e}")
 
-    class Classification(BaseModel):
-        importance: Literal["IMPORTANT", "NOT_IMPORTANT"]
-        score: float
-        reason: str
-        headline: str
-        source_name: str
-        source_country: str
+    # Parse the JSON response
+    content = response.choices[0].message.content
+    if not content:
+        raise HTTPException(status_code=500, detail="OpenAI returned empty response")
 
-    response = client.responses.parse(
-        model=OPENAI_MODEL,
-        input=[
-            {"role": "user", "content": prompt},
-        ],
-        text_format=Classification,  # el SDK devuelve un objeto de este tipo 
-    )
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"OpenAI returned invalid JSON: {e}. Content: {content[:200]}"
+        )
 
-    parsed: Classification = response.output_parsed
+    # Extract and validate fields with defaults
+    importance = parsed.get("importance", "NOT_IMPORTANT")
+    if importance not in ("IMPORTANT", "NOT_IMPORTANT"):
+        importance = "NOT_IMPORTANT"
 
-    # Normalizar score al rango [0,1] por si acaso
-    score = float(parsed.score)
-    if score < 0:
-        score = 0.0
-    if score > 1:
-        score = 1.0
+    score = parsed.get("score", 0.5)
+    try:
+        score = float(score)
+        score = max(0.0, min(1.0, score))  # Clamp to [0, 1]
+    except (TypeError, ValueError):
+        score = 0.5
 
     return ChangeOutput(
-        importance=parsed.importance,
+        importance=importance,
         score=score,
-        reason=parsed.reason,
-        headline=parsed.headline,
-        source_name=parsed.source_name,
-        source_country=parsed.source_country,
+        reason=parsed.get("reason", "Sin análisis disponible"),
+        headline=parsed.get("headline", "Actualización regulatoria"),
+        source_name=parsed.get("source_name", "Fuente no identificada"),
+        source_country=parsed.get("source_country", "País no identificado"),
     )
 
 

@@ -46,6 +46,56 @@ def fetch_new_changes(db: Session, limit: int = 50):
     return rows
 
 
+def fetch_error_changes(db: Session, limit: int = 20, max_age_hours: int = 24):
+    """
+    Obtiene cambios con status ERROR para reintentar.
+    Solo reintenta errores de las últimas max_age_hours horas.
+    """
+    rows = db.execute(
+        text(
+            f"""
+            SELECT
+                id,
+                title,
+                raw_content,
+                raw_notification,
+                previous_text,
+                current_text,
+                diff_text,
+                url,
+                created_at
+            FROM wachet_changes
+            WHERE status = 'ERROR'
+              AND updated_at > NOW() - INTERVAL '{max_age_hours} hours'
+            ORDER BY updated_at ASC
+            LIMIT :limit
+            """
+        ),
+        {"limit": limit},
+    ).mappings().all()
+    return rows
+
+
+def reset_old_errors_to_new(db: Session, max_retries_age_hours: int = 48):
+    """
+    Resetea registros ERROR muy viejos a NEW para que sean reintentados.
+    Solo resetea los que tienen más de max_retries_age_hours horas en ERROR.
+    """
+    result = db.execute(
+        text(
+            f"""
+            UPDATE wachet_changes
+            SET status = 'NEW', updated_at = NOW()
+            WHERE status = 'ERROR'
+              AND updated_at < NOW() - INTERVAL '{max_retries_age_hours} hours'
+            """
+        ),
+    )
+    if result.rowcount > 0:
+        print(f"Reseteados {result.rowcount} registros ERROR antiguos a NEW para reintento")
+    return result.rowcount
+
+
 def load_notification(raw_notification, raw_content: str | None):
     if isinstance(raw_notification, dict):
         return raw_notification
@@ -210,8 +260,53 @@ def classify_pending_changes(batch_size: int = 50):
     )
 
 
+def retry_error_changes():
+    """
+    Reintenta clasificar cambios que fallaron previamente (status = ERROR).
+    """
+    print("Reintentando cambios con errores previos...")
+
+    with get_session() as db:
+        # First, reset very old errors back to NEW
+        reset_old_errors_to_new(db, max_retries_age_hours=48)
+        db.commit()
+
+        # Fetch recent errors to retry
+        error_rows = fetch_error_changes(db, limit=20, max_age_hours=24)
+
+        if not error_rows:
+            print("No hay cambios con error para reintentar")
+            return
+
+        print(f"Reintentando {len(error_rows)} cambios con error...")
+
+        # Reset them to NEW so classify_pending_changes picks them up
+        error_ids = [row["id"] for row in error_rows]
+        db.execute(
+            text(
+                """
+                UPDATE wachet_changes
+                SET status = 'NEW', updated_at = NOW()
+                WHERE id = ANY(:ids)
+                """
+            ),
+            {"ids": error_ids},
+        )
+        db.commit()
+
+    print(f"Reseteados {len(error_ids)} registros para reintento")
+
+
 def main():
     print("Ejecutando worker de filtrado IA...")
+
+    # First retry any failed classifications
+    try:
+        retry_error_changes()
+    except Exception as e:
+        print(f"[WARN] Error en retry de cambios fallidos: {e}")
+
+    # Then process new changes
     classify_pending_changes()
 
 
