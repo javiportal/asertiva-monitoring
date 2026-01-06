@@ -145,6 +145,7 @@ export function useChanges(): UseChangesResult {
         fetchData();
     }, [fetchData]);
 
+
     return {
         changes,
         summary,
@@ -155,4 +156,49 @@ export function useChanges(): UseChangesResult {
     };
 }
 
+export type AlertDispatch = {
+    id?: number;
+    change_id?: number;
+    email: string;
+    dispatch_date: string;
+    country_state: string;
+    alert_count: number;
+    alert_type: string;
+    subject: string;
+    topic: string;
+    instance: string;
+    legislative_body?: string;
+    clients?: string;
+    created_at?: string;
+    // Extended fields from join
+    change_title?: string;
+    change_url?: string;
+};
+
+export async function createAlert(alert: AlertDispatch): Promise<AlertDispatch> {
+    const res = await fetch(`${API_BASE}/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(alert)
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Error creating alert: ${text}`);
+    }
+    return res.json();
+}
+
+export async function getAlertsByChange(changeId: number): Promise<AlertDispatch[]> {
+    const res = await fetch(`${API_BASE}/alerts/by-change/${changeId}`);
+    if (!res.ok) throw new Error('Error fetching alerts');
+    return res.json();
+}
+
+export async function getAllAlerts(): Promise<AlertDispatch[]> {
+    const res = await fetch(`${API_BASE}/alerts`);
+    if (!res.ok) throw new Error('Error fetching alerts');
+    return res.json();
+}
+
 export default useChanges;
+

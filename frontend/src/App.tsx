@@ -1,9 +1,11 @@
 // App.tsx - Fully connected with real API data
 import { useState, useMemo } from "react";
 import Header from "./components/Header";
+import SubHeader from "./components/SubHeader";
 import SearchFiltersCard from "./components/SearchFiltersCard";
 import InstitutionCheckboxes, { defaultInstitutions } from "./components/InstitutionCheckboxes";
 import EmailInbox from "./components/EmailInbox";
+import AlertHistoryList from "./components/AlertHistoryList";
 import DetailPanel from "./components/DetailPanel";
 import Toast from "./components/Toast";
 import { type Change } from "./components/ChangesTable";
@@ -22,6 +24,10 @@ function App() {
   // State - API Data (using custom hook)
   // ---------------------------------------------------------------------------
   const { changes, loading, error, refetch, isRetrying } = useChanges();
+
+  // View state (tabs: new, pending, validated, history)
+  const [activeView, setActiveView] = useState<'new' | 'pending' | 'validated' | 'history'>('pending');
+  const [dateRange, setDateRange] = useState('30');
 
   // Global search filter (from SearchFiltersCard)
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
@@ -58,6 +64,28 @@ function App() {
   // ---------------------------------------------------------------------------
   const filteredChanges = useMemo(() => {
     let result = changes;
+
+    // Filter by view (status)
+    if (activeView === 'new') {
+      result = result.filter((c) => c.status === 'NEW');
+    } else if (activeView === 'pending') {
+      result = result.filter((c) => c.status === 'PENDING' || c.status === 'FILTERED');
+    } else if (activeView === 'validated') {
+      result = result.filter((c) => c.status === 'VALIDATED' || c.status === 'PUBLISHED');
+    } else if (activeView === 'history') {
+      // History shows all processed items (validated, published, discarded)
+      result = result.filter((c) =>
+        c.status === 'VALIDATED' || c.status === 'PUBLISHED' || c.status === 'DISCARDED'
+      );
+    }
+
+    // Filter by date range
+    if (dateRange !== 'custom') {
+      const days = parseInt(dateRange, 10);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      result = result.filter((c) => new Date(c.created_at) >= cutoff);
+    }
 
     // Global search filter
     if (globalSearchQuery.trim()) {
@@ -113,7 +141,7 @@ function App() {
     }
 
     return result;
-  }, [changes, globalSearchQuery, selectedCountry]);
+  }, [changes, activeView, dateRange, globalSearchQuery, selectedCountry]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -193,6 +221,14 @@ function App() {
       {/* Header */}
       <Header />
 
+      {/* SubHeader with view tabs */}
+      <SubHeader
+        activeView={activeView}
+        onViewChange={setActiveView}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+      />
+
       {/* Main Content */}
       <main
         className="container"
@@ -226,23 +262,27 @@ function App() {
             countryFilter={selectedCountry}
           />
 
-          {/* Right Content - Email Inbox */}
-          <EmailInbox
-            changes={filteredChanges}
-            loading={loading}
-            error={error}
-            searchQuery={emailSearchQuery}
-            onSearchChange={setEmailSearchQuery}
-            countryFilter={selectedCountry}
-            importanceFilter={importanceFilter}
-            onImportanceFilterChange={setImportanceFilter}
-            selectedInstitutions={selectedInstitutions}
-            onSelectChange={handleSelectChange}
-            selectedChangeId={selectedChange?.id ?? null}
-            onRetry={refetch}
-            isRetrying={isRetrying}
-            onClearFilters={handleClearFilters}
-          />
+          {/* Right Content - Email Inbox or Alert History */}
+          {activeView === 'history' ? (
+            <AlertHistoryList onRefresh={refetch} />
+          ) : (
+            <EmailInbox
+              changes={filteredChanges}
+              loading={loading}
+              error={error}
+              searchQuery={emailSearchQuery}
+              onSearchChange={setEmailSearchQuery}
+              countryFilter={selectedCountry}
+              importanceFilter={importanceFilter}
+              onImportanceFilterChange={setImportanceFilter}
+              selectedInstitutions={selectedInstitutions}
+              onSelectChange={handleSelectChange}
+              selectedChangeId={selectedChange?.id ?? null}
+              onRetry={refetch}
+              isRetrying={isRetrying}
+              onClearFilters={handleClearFilters}
+            />
+          )}
         </div>
       </main>
 

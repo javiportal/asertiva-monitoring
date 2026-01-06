@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw, Columns, FileText, ArrowLeftRight, FileCode } from 'lucide-react';
+import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw, Columns, FileText, ArrowLeftRight, FileCode, Bell } from 'lucide-react';
 import { type Change } from './ChangesTable';
 import * as Diff from 'diff';
+import AlertRegistrationModal from './AlertRegistrationModal';
+
+import { getAlertsByChange, type AlertDispatch } from '../hooks/useChanges';
 
 type DetailPanelProps = {
     change: Change | null;
@@ -26,13 +29,27 @@ export default function DetailPanel({
 }: DetailPanelProps) {
     const [activeTab, setActiveTab] = useState<TabId>('comparison');
     const [showFullText, setShowFullText] = useState(false);
+    const [showAlertModal, setShowAlertModal] = useState(false);
+    const [alerts, setAlerts] = useState<AlertDispatch[]>([]);
     const changeId = change?.id;
+
+    const loadAlerts = React.useCallback(async () => {
+        if (!changeId) return;
+        try {
+            const data = await getAlertsByChange(changeId);
+            setAlerts(data);
+        } catch (e) {
+            console.error('Error loading alerts', e);
+        }
+    }, [changeId]);
 
     // Reset state when change selection changes
     useEffect(() => {
         setActiveTab('comparison');
         setShowFullText(false);
-    }, [changeId]);
+        setAlerts([]);
+        loadAlerts();
+    }, [changeId, loadAlerts]);
 
     // Compute word-level diff for Split View
     const wordDiff = useMemo((): WordDiff[] => {
@@ -384,20 +401,45 @@ export default function DetailPanel({
                     zIndex: 10,
                 }}>
                     <div className="flex items-center justify-between" style={{ marginBottom: 'var(--spacing-3)' }}>
-                        <h2 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600 }}>
-                            Detalle del cambio
-                        </h2>
-                        <button
-                            onClick={onClose}
-                            className="btn-ghost"
-                            style={{
-                                padding: 'var(--spacing-2)',
-                                borderRadius: 'var(--radius-md)',
-                            }}
-                            aria-label="Cerrar panel"
-                        >
-                            <X size={22} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <h2 style={{ margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600 }}>
+                                Detalle del cambio
+                            </h2>
+                            {alerts.length > 0 && (
+                                <div className="badge badge-status" style={{ backgroundColor: '#e0f2fe', color: '#0369a1' }}>
+                                    <Bell size={12} />
+                                    {alerts.reduce((acc, curr) => acc + (curr.alert_count || 1), 0)} Alertas
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowAlertModal(true)}
+                                className="btn-ghost"
+                                style={{
+                                    padding: 'var(--spacing-2)',
+                                    borderRadius: 'var(--radius-md)',
+                                    color: 'var(--blue-night)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}
+                                title="Registrar alerta"
+                            >
+                                <Bell size={18} />
+                            </button>
+                            <button
+                                onClick={onClose}
+                                className="btn-ghost"
+                                style={{
+                                    padding: 'var(--spacing-2)',
+                                    borderRadius: 'var(--radius-md)',
+                                }}
+                                aria-label="Cerrar panel"
+                            >
+                                <X size={22} />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Badges Row */}
@@ -481,6 +523,65 @@ export default function DetailPanel({
                                 color: 'var(--text-primary)',
                             }}>
                                 {change.ai_reason}
+                            </div>
+                        </section>
+                    )}
+
+
+
+                    {/* Alert History */}
+                    {alerts.length > 0 && (
+                        <section style={{ marginBottom: 'var(--spacing-5)' }}>
+                            <h3 style={{
+                                marginBottom: 'var(--spacing-3)',
+                                fontSize: 'var(--font-size-base)',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                            }}>
+                                <Bell size={16} />
+                                Historial de Alertas
+                            </h3>
+                            <div style={{
+                                border: '1px solid var(--border-light)',
+                                borderRadius: 'var(--radius-md)',
+                                overflow: 'hidden'
+                            }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+                                    <thead style={{ backgroundColor: 'var(--gray-50)', borderBottom: '1px solid var(--border-light)' }}>
+                                        <tr>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Fecha</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Tipo</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Destino</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Detalles</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {alerts.map((alert, idx) => (
+                                            <tr key={idx} style={{ borderBottom: idx < alerts.length - 1 ? '1px solid var(--border-light)' : 'none' }}>
+                                                <td style={{ padding: '8px 12px' }}>{alert.dispatch_date}</td>
+                                                <td style={{ padding: '8px 12px' }}>
+                                                    <span style={{
+                                                        padding: '2px 6px',
+                                                        borderRadius: '4px',
+                                                        backgroundColor: alert.alert_type === 'Regulatoria' ? '#fee2e2' : '#e0f2fe',
+                                                        color: alert.alert_type === 'Regulatoria' ? '#991b1b' : '#0369a1',
+                                                        fontSize: '11px',
+                                                        fontWeight: 500
+                                                    }}>
+                                                        {alert.alert_type}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '8px 12px' }}>{alert.email}</td>
+                                                <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
+                                                    {alert.subject} - {alert.instance}
+                                                    {alert.legislative_body && ` (${alert.legislative_body})`}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </section>
                     )}
@@ -606,7 +707,18 @@ export default function DetailPanel({
                         </a>
                     )}
                 </div>
-            </aside>
+            </aside >
+
+            {showAlertModal && change && (
+                <AlertRegistrationModal
+                    change={change}
+                    onClose={() => setShowAlertModal(false)}
+                    onSuccess={() => {
+                        loadAlerts();
+                    }}
+                />
+            )
+            }
         </>
     );
 }

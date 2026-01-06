@@ -2,7 +2,7 @@ import difflib
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -112,6 +112,34 @@ class UpdateResponse(BaseModel):
     ok: bool
     id: int
     status: str
+
+
+
+# ---------- Alert Models ----------
+
+
+class AlertDispatchCreate(BaseModel):
+    change_id: Optional[int] = None
+    email: str
+    dispatch_date: date
+    country_state: str
+    alert_count: int = 1
+    alert_type: str
+    subject: str
+    topic: str
+    instance: str
+    legislative_body: Optional[str] = None
+    clients: Optional[str] = None
+
+
+class AlertDispatchResponse(AlertDispatchCreate):
+    id: int
+    created_at: datetime
+
+
+class AlertStatItem(BaseModel):
+    year: int
+    count: int
 
 
 # ---------- Column Cache ----------
@@ -586,3 +614,120 @@ def update_wachet_change(
 
     db.commit()
     return UpdateResponse(ok=True, id=change_id, status=payload.status)
+
+
+# ---------- Alert Dispatch System ----------
+
+
+@app.post("/alerts", response_model=AlertDispatchResponse)
+def create_alert(alert: AlertDispatchCreate, db: Session = Depends(get_db)):
+    """
+    Registers a new alert dispatch.
+    """
+    query = text(
+        """
+        INSERT INTO alert_dispatches (
+            change_id, email, dispatch_date, country_state, alert_count,
+            alert_type, subject, topic, instance, legislative_body, clients
+        ) VALUES (
+            :change_id, :email, :dispatch_date, :country_state, :alert_count,
+            :alert_type, :subject, :topic, :instance, :legislative_body, :clients
+        )
+        RETURNING id, created_at
+        """
+    )
+    try:
+        result = db.execute(
+            query,
+            alert.model_dump()
+        ).fetchone()
+        db.commit()
+        
+        # Return complete object
+        data = alert.model_dump()
+        data["id"] = result.id
+        data["created_at"] = result.created_at
+        return AlertDispatchResponse(**data)
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error creating alert dispatch")
+        raise HTTPException(status_code=500, detail="Error saving alert dispatch")
+
+
+class AlertWithChangeResponse(AlertDispatchResponse):
+    """Alert response with associated change info."""
+    change_title: Optional[str] = None
+    change_url: Optional[str] = None
+
+
+@app.get("/alerts", response_model=list[AlertWithChangeResponse])
+def get_all_alerts(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all registered alerts with associated change info.
+    """
+    query = text(
+        """
+        SELECT
+            a.id, a.change_id, a.email, a.dispatch_date, a.country_state, a.alert_count,
+            a.alert_type, a.subject, a.topic, a.instance, a.legislative_body, a.clients, a.created_at,
+            w.title as change_title, w.url as change_url
+        FROM alert_dispatches a
+        LEFT JOIN wachet_changes w ON a.change_id = w.id
+        ORDER BY a.created_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    rows = db.execute(query, {"limit": limit, "offset": offset}).mappings().all()
+    return [AlertWithChangeResponse(**dict(r)) for r in rows]
+
+
+@app.get("/alerts/by-change/{change_id}", response_model=list[AlertDispatchResponse])
+def get_alerts_by_change(change_id: int, db: Session = Depends(get_db)):
+    """
+    Get all alerts registered for a specific change.
+    """
+    query = text(
+        """
+        SELECT
+            id, change_id, email, dispatch_date, country_state, alert_count,
+            alert_type, subject, topic, instance, legislative_body, clients, created_at
+        FROM alert_dispatches
+        WHERE change_id = :change_id
+        ORDER BY created_at DESC
+        """
+    )
+    rows = db.execute(query, {"change_id": change_id}).mappings().all()
+    return [AlertDispatchResponse(**dict(r)) for r in rows]
+
+
+@app.get("/alerts/stats", response_model=list[AlertStatItem])
+def get_alert_stats(year: int = 2026, db: Session = Depends(get_db)):
+    """
+    Get total alerts count for a specific year.
+    Future: expanded stats.
+    """
+    dialect = db.bind.dialect.name if db.bind else "postgresql"
+    if dialect == "sqlite":
+        # SQLite uses strftime for year extraction from text/date
+        condition = "strftime('%Y', dispatch_date) = :year"
+        # Since parameter is int, logic might need casting, but let's try string comparison
+        # Actually standard sqlite date is string YYYY-MM-DD.
+        # :year is int.
+        condition = "CAST(strftime('%Y', dispatch_date) AS INTEGER) = :year"
+    else:
+        condition = "EXTRACT(YEAR FROM dispatch_date) = :year"
+
+    query = text(
+        f"""
+        SELECT COUNT(*) as count
+        FROM alert_dispatches
+        WHERE {condition}
+        """
+    )
+    count = db.execute(query, {"year": year}).scalar()
+    return [AlertStatItem(year=year, count=count or 0)]
+
