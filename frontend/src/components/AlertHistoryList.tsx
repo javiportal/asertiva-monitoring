@@ -1,11 +1,16 @@
 // AlertHistoryList.tsx - Shows registered alerts history
-import { useEffect, useState } from 'react';
-import { Bell, Calendar, Mail, MapPin, Building2, Users, ExternalLink, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bell, Calendar, Mail, MapPin, Building2, Users, ExternalLink, RefreshCw, Search, Filter, X } from 'lucide-react';
 import { getAllAlerts, type AlertDispatch } from '../hooks/useChanges';
 
 type AlertHistoryListProps = {
     onRefresh?: () => void;
 };
+
+// Filter options
+const SUBJECTS = ['Todos', 'Bancario', 'Fintech', 'Seguros', 'Valores', 'General', 'Ciberseguridad', 'Datos Personales', 'AML/PLD'];
+const TYPES = ['Todos', 'Regulatoria', 'Informativa'];
+const INSTANCES = ['Todos', 'Legislativo', 'Ejecutivo', 'Judicial', 'Organismos Autónomos', 'Internacional'];
 
 function formatDate(dateStr: string): string {
     const date = new Date(dateStr);
@@ -23,6 +28,12 @@ export default function AlertHistoryList({ onRefresh }: AlertHistoryListProps) {
     const [alerts, setAlerts] = useState<AlertDispatch[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [subjectFilter, setSubjectFilter] = useState('Todos');
+    const [typeFilter, setTypeFilter] = useState('Todos');
+    const [instanceFilter, setInstanceFilter] = useState('Todos');
 
     const loadAlerts = async () => {
         setLoading(true);
@@ -45,6 +56,63 @@ export default function AlertHistoryList({ onRefresh }: AlertHistoryListProps) {
     const handleRefresh = () => {
         loadAlerts();
         onRefresh?.();
+    };
+
+    // Get unique countries from alerts for dynamic filter
+    const availableCountries = useMemo(() => {
+        const countries = new Set(alerts.map(a => a.country_state).filter(Boolean));
+        return ['Todos', ...Array.from(countries).sort()];
+    }, [alerts]);
+
+    const [countryFilter, setCountryFilter] = useState('Todos');
+
+    // Filtered alerts
+    const filteredAlerts = useMemo(() => {
+        return alerts.filter(alert => {
+            // Search filter (searches in topic, change_title, email, clients)
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase();
+                const matchesSearch =
+                    (alert.topic || '').toLowerCase().includes(q) ||
+                    (alert.change_title || '').toLowerCase().includes(q) ||
+                    (alert.email || '').toLowerCase().includes(q) ||
+                    (alert.clients || '').toLowerCase().includes(q) ||
+                    (alert.subject || '').toLowerCase().includes(q);
+                if (!matchesSearch) return false;
+            }
+
+            // Subject filter
+            if (subjectFilter !== 'Todos' && alert.subject !== subjectFilter) {
+                return false;
+            }
+
+            // Type filter
+            if (typeFilter !== 'Todos' && alert.alert_type !== typeFilter) {
+                return false;
+            }
+
+            // Instance filter
+            if (instanceFilter !== 'Todos' && alert.instance !== instanceFilter) {
+                return false;
+            }
+
+            // Country filter
+            if (countryFilter !== 'Todos' && alert.country_state !== countryFilter) {
+                return false;
+            }
+
+            return true;
+        });
+    }, [alerts, searchQuery, subjectFilter, typeFilter, instanceFilter, countryFilter]);
+
+    const hasActiveFilters = searchQuery || subjectFilter !== 'Todos' || typeFilter !== 'Todos' || instanceFilter !== 'Todos' || countryFilter !== 'Todos';
+
+    const clearFilters = () => {
+        setSearchQuery('');
+        setSubjectFilter('Todos');
+        setTypeFilter('Todos');
+        setInstanceFilter('Todos');
+        setCountryFilter('Todos');
     };
 
     return (
@@ -105,8 +173,153 @@ export default function AlertHistoryList({ onRefresh }: AlertHistoryListProps) {
                 </div>
             </div>
 
+            {/* Filters Section */}
+            <div style={{ padding: 'var(--spacing-4) var(--spacing-5)', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--gray-50)' }}>
+                {/* Search Input */}
+                <div style={{ position: 'relative', marginBottom: 'var(--spacing-3)' }}>
+                    <Search
+                        size={16}
+                        style={{
+                            position: 'absolute',
+                            left: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: 'var(--text-secondary)',
+                        }}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Buscar por tema, título, email, materia..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                            width: '100%',
+                            padding: 'var(--spacing-2) var(--spacing-3)',
+                            paddingLeft: '40px',
+                            fontSize: 'var(--font-size-sm)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'white',
+                        }}
+                    />
+                </div>
+
+                {/* Filter Dropdowns */}
+                <div style={{ display: 'flex', gap: 'var(--spacing-3)', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>Filtros:</span>
+                    </div>
+
+                    {/* Subject Filter */}
+                    <select
+                        value={subjectFilter}
+                        onChange={(e) => setSubjectFilter(e.target.value)}
+                        style={{
+                            padding: 'var(--spacing-1) var(--spacing-2)',
+                            fontSize: 'var(--font-size-sm)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: subjectFilter !== 'Todos' ? 'var(--blue-night)' : 'white',
+                            color: subjectFilter !== 'Todos' ? 'white' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {SUBJECTS.map(s => (
+                            <option key={s} value={s}>{s === 'Todos' ? 'Materia' : s}</option>
+                        ))}
+                    </select>
+
+                    {/* Type Filter */}
+                    <select
+                        value={typeFilter}
+                        onChange={(e) => setTypeFilter(e.target.value)}
+                        style={{
+                            padding: 'var(--spacing-1) var(--spacing-2)',
+                            fontSize: 'var(--font-size-sm)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: typeFilter !== 'Todos' ? 'var(--blue-night)' : 'white',
+                            color: typeFilter !== 'Todos' ? 'white' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {TYPES.map(t => (
+                            <option key={t} value={t}>{t === 'Todos' ? 'Tipo' : t}</option>
+                        ))}
+                    </select>
+
+                    {/* Instance Filter */}
+                    <select
+                        value={instanceFilter}
+                        onChange={(e) => setInstanceFilter(e.target.value)}
+                        style={{
+                            padding: 'var(--spacing-1) var(--spacing-2)',
+                            fontSize: 'var(--font-size-sm)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: instanceFilter !== 'Todos' ? 'var(--blue-night)' : 'white',
+                            color: instanceFilter !== 'Todos' ? 'white' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {INSTANCES.map(i => (
+                            <option key={i} value={i}>{i === 'Todos' ? 'Instancia' : i}</option>
+                        ))}
+                    </select>
+
+                    {/* Country Filter */}
+                    <select
+                        value={countryFilter}
+                        onChange={(e) => setCountryFilter(e.target.value)}
+                        style={{
+                            padding: 'var(--spacing-1) var(--spacing-2)',
+                            fontSize: 'var(--font-size-sm)',
+                            border: '1px solid var(--border-light)',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: countryFilter !== 'Todos' ? 'var(--blue-night)' : 'white',
+                            color: countryFilter !== 'Todos' ? 'white' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {availableCountries.map(c => (
+                            <option key={c} value={c}>{c === 'Todos' ? 'País' : c}</option>
+                        ))}
+                    </select>
+
+                    {/* Clear Filters Button */}
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearFilters}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: 'var(--spacing-1) var(--spacing-2)',
+                                fontSize: 'var(--font-size-sm)',
+                                backgroundColor: 'transparent',
+                                border: '1px solid var(--red-accent)',
+                                borderRadius: 'var(--radius-sm)',
+                                color: 'var(--red-accent)',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <X size={14} />
+                            Limpiar
+                        </button>
+                    )}
+                </div>
+
+                {/* Results count */}
+                {hasActiveFilters && (
+                    <div style={{ marginTop: 'var(--spacing-2)', fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                        Mostrando {filteredAlerts.length} de {alerts.length} alertas
+                    </div>
+                )}
+            </div>
+
             {/* Content */}
-            <div style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
+            <div style={{ maxHeight: 'calc(100vh - 500px)', overflowY: 'auto' }}>
                 {loading ? (
                     <div style={{ padding: 'var(--spacing-8)', textAlign: 'center' }}>
                         <div className="skeleton" style={{ height: '80px', marginBottom: 'var(--spacing-3)' }} />
@@ -141,8 +354,32 @@ export default function AlertHistoryList({ onRefresh }: AlertHistoryListProps) {
                             Las alertas que registres desde el panel de detalle aparecerán aquí.
                         </p>
                     </div>
+                ) : filteredAlerts.length === 0 ? (
+                    <div style={{ padding: 'var(--spacing-8)', textAlign: 'center' }}>
+                        <Filter size={48} style={{ color: 'var(--gray-300)', marginBottom: 'var(--spacing-4)' }} />
+                        <h3 style={{ margin: 0, marginBottom: 'var(--spacing-2)', color: 'var(--text-primary)' }}>
+                            No se encontraron alertas
+                        </h3>
+                        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-4)' }}>
+                            No hay alertas que coincidan con los filtros aplicados.
+                        </p>
+                        <button
+                            onClick={clearFilters}
+                            style={{
+                                padding: 'var(--spacing-2) var(--spacing-4)',
+                                backgroundColor: 'var(--blue-night)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 'var(--radius-md)',
+                                cursor: 'pointer',
+                                fontSize: 'var(--font-size-sm)',
+                            }}
+                        >
+                            Limpiar filtros
+                        </button>
+                    </div>
                 ) : (
-                    alerts.map((alert) => (
+                    filteredAlerts.map((alert) => (
                         <div
                             key={alert.id}
                             style={{
