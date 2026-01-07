@@ -1,0 +1,16 @@
+pyproject.toml
+tests/test_normalizer.py
+watchguard/__init__.py
+watchguard/cli.py
+watchguard/differ.py
+watchguard/extractor.py
+watchguard/fetcher.py
+watchguard/ingest_client.py
+watchguard/main.py
+watchguard/normalizer.py
+watchguard/runner.py
+watchguard/storage.py
+watchguard.egg-info/PKG-INFO
+watchguard.egg-info/SOURCES.txt
+watchguard.egg-info/dependency_links.txt
+watchguard.egg-info/top_level.txt
