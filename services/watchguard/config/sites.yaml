@@ -1,0 +1,32 @@
+# WatchGuard Site Configuration
+# Add URLs to monitor here
+
+settings:
+  api_url: ${WATCHGUARD_API_URL:-http://localhost:8000}
+  db_path: ${WATCHGUARD_DB_PATH:-./data/watchguard.db}
+  default_rate_limit_seconds: 5
+  user_agent: "WatchGuard/1.0 (Regulatory Monitor; +https://asertiva.com)"
+
+sites:
+  # Example: DOF (Diario Oficial de la Federación)
+  - url: https://www.dof.gob.mx/index_113.php
+    name: DOF - Índice SAT
+    fetch_mode: http
+    content_selector: "#indice"  # Optional: CSS selector for main content
+    source_name: DOF
+    source_country: México
+    rate_limit_seconds: 10
+    
+  # Example: CNBV
+  # - url: https://www.gob.mx/cnbv/documentos/disposiciones-de-caracter-general
+  #   name: CNBV - Disposiciones
+  #   fetch_mode: browser  # Needs JS rendering
+  #   source_name: CNBV
+  #   source_country: México
+
+  # Example: PDF document
+  # - url: https://example.com/document.pdf
+  #   name: Reglamento XYZ
+  #   fetch_mode: pdf
+  #   source_name: Custom
+  #   source_country: México
