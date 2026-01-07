@@ -1,10 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw, Columns, FileText, ArrowLeftRight, FileCode, Bell } from 'lucide-react';
+import { X, ExternalLink, CheckCircle, Calendar, Tag, RotateCcw, Columns, FileText, ArrowLeftRight, FileCode, Bell, Globe, Shield, FileEdit } from 'lucide-react';
 import { type Change } from './ChangesTable';
 import * as Diff from 'diff';
 import AlertRegistrationModal from './AlertRegistrationModal';
 
 import { getAlertsByChange, type AlertDispatch } from '../hooks/useChanges';
+
+// Source badge configuration (matches ChangesTable)
+const SOURCE_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
+    wachete: {
+        label: 'Wachete',
+        color: '#0369a1',
+        bgColor: '#e0f2fe',
+        icon: <Globe size={12} />,
+    },
+    watchguard: {
+        label: 'WatchGuard',
+        color: '#7c3aed',
+        bgColor: '#ede9fe',
+        icon: <Shield size={12} />,
+    },
+    manual: {
+        label: 'Manual',
+        color: '#059669',
+        bgColor: '#d1fae5',
+        icon: <FileEdit size={12} />,
+    },
+};
 
 type DetailPanelProps = {
     change: Change | null;
@@ -444,6 +466,26 @@ export default function DetailPanel({
 
                     {/* Badges Row */}
                     <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                        {/* Source Badge */}
+                        {(() => {
+                            const sourceKey = change.source || 'wachete';
+                            const config = SOURCE_CONFIG[sourceKey] || SOURCE_CONFIG.wachete;
+                            return (
+                                <div
+                                    className="badge"
+                                    style={{
+                                        backgroundColor: config.bgColor,
+                                        color: config.color,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                    }}
+                                >
+                                    {config.icon}
+                                    {config.label}
+                                </div>
+                            );
+                        })()}
                         <div className={isImportant ? 'badge badge-important' : 'badge badge-normal'}>
                             {change.importance || 'N/A'}
                         </div>

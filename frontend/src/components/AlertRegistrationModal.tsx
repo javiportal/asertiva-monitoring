@@ -19,14 +19,15 @@ export default function AlertRegistrationModal({ change, onClose, onSuccess }: A
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Form State
+    // Form State - prefill from change data where available
     const [email, setEmail] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [country, setCountry] = useState(change.source_country || 'México');
     const [count, setCount] = useState(1);
     const [type, setType] = useState('Regulatoria');
     const [subject, setSubject] = useState('');
-    const [topic, setTopic] = useState('');
+    // Prefill topic from headline if available
+    const [topic, setTopic] = useState(change.headline || '');
     const [instance, setInstance] = useState('Organismos Autónomos');
     const [legislativeBody, setLegislativeBody] = useState('');
     const [clients, setClients] = useState('');

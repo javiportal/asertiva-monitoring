@@ -1,18 +1,23 @@
 import difflib
+import hashlib
 import json
 import logging
+import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
 
 from .db import get_db
+
+# Ingestion API token (set via environment variable)
+INGEST_API_TOKEN = os.getenv("INGEST_API_TOKEN", "")
 
 app = FastAPI(title="Asertiva Monitoring API")
 
@@ -34,6 +39,10 @@ ALLOWED_STATUSES = {"NEW", "PENDING", "FILTERED", "VALIDATED", "PUBLISHED", "DIS
 OPTIONAL_CHANGE_COLUMNS = ("headline", "source_name", "source_country")
 # Diff columns added by migration 002 - may be missing in older DBs
 OPTIONAL_DIFF_COLUMNS = ("previous_text", "current_text", "diff_text")
+# WatchGuard columns added by migration 004 - may be missing in older DBs
+OPTIONAL_WATCHGUARD_COLUMNS = ("source", "content_hash", "fetch_mode", "snapshot_ref", "fetched_at")
+# Valid source values
+VALID_SOURCES = {"wachete", "watchguard", "manual"}
 
 # ---------- Response Models (API Contract) ----------
 
@@ -58,6 +67,12 @@ class WachetChangeItem(BaseModel):
     diff_text: Optional[str] = None
     raw_content: Optional[str] = None
     raw_notification: Optional[Any] = None
+    # WatchGuard fields (migration 004)
+    source: Optional[str] = None  # wachete, watchguard, or manual
+    content_hash: Optional[str] = None
+    fetch_mode: Optional[str] = None  # http, browser, or pdf
+    snapshot_ref: Optional[str] = None
+    fetched_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -427,6 +442,14 @@ def list_changes(
             select_columns.append(f"NULL AS {col}")
             missing_columns.append(col)
 
+    # Handle WatchGuard columns (source, content_hash, fetch_mode, snapshot_ref, fetched_at)
+    for col in OPTIONAL_WATCHGUARD_COLUMNS:
+        if col in existing_columns:
+            select_columns.append(col)
+        else:
+            select_columns.append(f"NULL AS {col}")
+            missing_columns.append(col)
+
     if missing_columns:
         logger.warning(
             "Faltan columnas en wachet_changes: %s (rellenando con NULL). "
@@ -614,6 +637,186 @@ def update_wachet_change(
 
     db.commit()
     return UpdateResponse(ok=True, id=change_id, status=payload.status)
+
+
+# ---------- Change Ingestion System (for WatchGuard and external sources) ----------
+
+
+class ChangeIngestV1(BaseModel):
+    """
+    Minimal payload for ingesting changes from external sources like WatchGuard.
+    """
+    source: str = Field(default="watchguard", description="Origin: wachete, watchguard, or manual")
+    wachet_id: Optional[str] = Field(default=None, description="Unique ID; auto-generated if missing")
+    url: str = Field(..., description="Source URL being monitored")
+    title: str = Field(..., description="Title or description of the page/change")
+    previous_text: Optional[str] = Field(default=None, description="Previous version content")
+    current_text: Optional[str] = Field(default=None, description="Current version content")
+    diff_text: Optional[str] = Field(default=None, description="Pre-computed unified diff")
+    content_hash: Optional[str] = Field(default=None, description="SHA256 of normalized text for dedupe")
+    fetch_mode: Optional[str] = Field(default=None, description="http, browser, or pdf")
+    fetched_at: Optional[datetime] = Field(default=None, description="When content was fetched")
+    snapshot_ref: Optional[str] = Field(default=None, description="External snapshot storage reference")
+    raw_notification: Optional[dict] = Field(default=None, description="Optional raw metadata")
+
+
+class ChangeIngestResponse(BaseModel):
+    """Response for change ingestion."""
+    ok: bool
+    id: Optional[int] = None
+    wachet_id: str
+    message: str
+    duplicate: bool = False
+
+
+def verify_ingest_token(x_ingest_token: Optional[str] = Header(default=None)) -> None:
+    """
+    Verify the ingestion API token. Raises 401 if invalid.
+    If INGEST_API_TOKEN env var is empty, auth is disabled (development mode).
+    """
+    if not INGEST_API_TOKEN:
+        # Auth disabled in development
+        return
+    if not x_ingest_token or x_ingest_token != INGEST_API_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing X-Ingest-Token header"
+        )
+
+
+def generate_wachet_id(source: str, url: str) -> str:
+    """
+    Generate a unique wachet_id for external sources.
+    Format: {source}:{url_hash}:{unix_ts}
+    """
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
+    unix_ts = int(datetime.utcnow().timestamp())
+    return f"{source}:{url_hash}:{unix_ts}"
+
+
+@app.post("/ingest/changes", response_model=ChangeIngestResponse)
+def ingest_change(
+    payload: ChangeIngestV1,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_ingest_token),
+):
+    """
+    Ingest a change from an external source (e.g., WatchGuard).
+
+    - Validates source is in VALID_SOURCES
+    - Auto-generates wachet_id if not provided
+    - Deduplicates: if same url + content_hash exists in last 24h, returns 200 without insert
+    - Sets status to NEW so filter-worker picks it up
+
+    Requires X-Ingest-Token header (unless INGEST_API_TOKEN env var is empty).
+    """
+    # Validate source
+    if payload.source not in VALID_SOURCES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid source. Must be one of: {', '.join(sorted(VALID_SOURCES))}"
+        )
+
+    # Generate wachet_id if not provided
+    wachet_id = payload.wachet_id or generate_wachet_id(payload.source, payload.url)
+
+    # Check existing columns to ensure migration has been applied
+    existing_columns = get_existing_columns(db)
+    if "source" not in existing_columns:
+        raise HTTPException(
+            status_code=500,
+            detail="Migration 004 not applied. Run: psql $DATABASE_URL -f migrations/004_add_watchguard_fields.sql"
+        )
+
+    # Dedupe check: look for same url + content_hash in last 24 hours
+    if payload.content_hash and payload.url:
+        dedupe_query = text("""
+            SELECT id, wachet_id FROM wachet_changes
+            WHERE url = :url
+              AND content_hash = :content_hash
+              AND created_at > NOW() - INTERVAL '24 hours'
+            LIMIT 1
+        """)
+        existing = db.execute(
+            dedupe_query,
+            {"url": payload.url, "content_hash": payload.content_hash}
+        ).mappings().first()
+
+        if existing:
+            return ChangeIngestResponse(
+                ok=True,
+                id=existing["id"],
+                wachet_id=existing["wachet_id"],
+                message="Change already exists (duplicate within 24h window)",
+                duplicate=True,
+            )
+
+    # Compute diff if not provided
+    diff_text = payload.diff_text
+    if not diff_text and payload.previous_text and payload.current_text:
+        diff_text = compute_diff(payload.previous_text, payload.current_text)
+
+    # Insert new change with status NEW
+    insert_query = text("""
+        INSERT INTO wachet_changes (
+            wachet_id, url, title, status,
+            previous_text, current_text, diff_text,
+            source, content_hash, fetch_mode, fetched_at, snapshot_ref,
+            raw_notification, created_at, updated_at
+        ) VALUES (
+            :wachet_id, :url, :title, 'NEW',
+            :previous_text, :current_text, :diff_text,
+            :source, :content_hash, :fetch_mode, :fetched_at, :snapshot_ref,
+            :raw_notification, NOW(), NOW()
+        )
+        RETURNING id
+    """)
+
+    try:
+        result = db.execute(
+            insert_query,
+            {
+                "wachet_id": wachet_id,
+                "url": payload.url,
+                "title": payload.title,
+                "previous_text": payload.previous_text,
+                "current_text": payload.current_text,
+                "diff_text": diff_text,
+                "source": payload.source,
+                "content_hash": payload.content_hash,
+                "fetch_mode": payload.fetch_mode,
+                "fetched_at": payload.fetched_at,
+                "snapshot_ref": payload.snapshot_ref,
+                "raw_notification": json.dumps(payload.raw_notification) if payload.raw_notification else None,
+            }
+        )
+        new_id = result.scalar()
+        db.commit()
+
+        return ChangeIngestResponse(
+            ok=True,
+            id=new_id,
+            wachet_id=wachet_id,
+            message="Change ingested successfully",
+            duplicate=False,
+        )
+    except IntegrityError as e:
+        db.rollback()
+        # Likely hit the unique constraint - treat as duplicate
+        if "ux_wachet_changes_url_hash_day" in str(e):
+            return ChangeIngestResponse(
+                ok=True,
+                id=None,
+                wachet_id=wachet_id,
+                message="Change already exists (same URL + hash on same day)",
+                duplicate=True,
+            )
+        logger.exception("Integrity error during change ingestion")
+        raise HTTPException(status_code=500, detail="Database integrity error during ingestion")
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error ingesting change")
+        raise HTTPException(status_code=500, detail=f"Error ingesting change: {str(e)}")
 
 
 # ---------- Alert Dispatch System ----------

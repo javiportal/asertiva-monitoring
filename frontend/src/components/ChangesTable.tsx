@@ -1,4 +1,5 @@
-import { ExternalLink } from 'lucide-react';
+import React from 'react';
+import { ExternalLink, Globe, Shield, FileEdit } from 'lucide-react';
 
 export type Change = {
     id: number;
@@ -18,7 +19,35 @@ export type Change = {
     previous_text?: string | null;
     current_text?: string | null;
     diff_text?: string | null;
+    // WatchGuard fields (migration 004)
+    source?: string | null; // wachete, watchguard, or manual
+    content_hash?: string | null;
+    fetch_mode?: string | null;
+    snapshot_ref?: string | null;
+    fetched_at?: string | null;
     created_at: string;
+};
+
+// Source badge configuration
+const SOURCE_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
+    wachete: {
+        label: 'Wachete',
+        color: '#0369a1',
+        bgColor: '#e0f2fe',
+        icon: <Globe size={10} />,
+    },
+    watchguard: {
+        label: 'WatchGuard',
+        color: '#7c3aed',
+        bgColor: '#ede9fe',
+        icon: <Shield size={10} />,
+    },
+    manual: {
+        label: 'Manual',
+        color: '#059669',
+        bgColor: '#d1fae5',
+        icon: <FileEdit size={10} />,
+    },
 };
 
 type ChangesTableProps = {
@@ -175,8 +204,32 @@ export default function ChangesTable({
                                         <div style={{
                                             fontSize: 'var(--font-size-xs)',
                                             color: 'var(--text-secondary)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 'var(--spacing-2)',
                                         }}>
-                                            ID: {change.wachet_id}
+                                            {/* Source Badge */}
+                                            {(() => {
+                                                const sourceKey = change.source || 'wachete';
+                                                const config = SOURCE_CONFIG[sourceKey] || SOURCE_CONFIG.wachete;
+                                                return (
+                                                    <span style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: '3px',
+                                                        padding: '1px 6px',
+                                                        borderRadius: '9999px',
+                                                        backgroundColor: config.bgColor,
+                                                        color: config.color,
+                                                        fontSize: '10px',
+                                                        fontWeight: 500,
+                                                    }}>
+                                                        {config.icon}
+                                                        {config.label}
+                                                    </span>
+                                                );
+                                            })()}
+                                            <span>ID: {change.wachet_id}</span>
                                         </div>
                                     </td>
 
