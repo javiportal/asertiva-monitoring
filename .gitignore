@@ -13,3 +13,19 @@ frontend/node_modules/
 # Python
 __pycache__/
 *.pyc
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ENV/
+.env
+
+# Node
+node_modules/
+dist/
+
+# Watchguard local venv
+services/watchguard/venv/
+
