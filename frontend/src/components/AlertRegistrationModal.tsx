@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle } from 'lucide-react';
+import {
+    X,
+    Send,
+    AlertCircle,
+    Mail,
+    Calendar,
+    MapPin,
+    Hash,
+    FileText,
+    Building2,
+    Users,
+    Bookmark,
+    Scale,
+    CheckCircle2
+} from 'lucide-react';
 import { type Change } from './ChangesTable';
 import { createAlert, type AlertDispatch } from '../hooks/useChanges';
 
@@ -11,13 +25,58 @@ type AlertRegistrationModalProps = {
 
 // Dropdown options
 const COUNTRIES = ['México', 'Chile', 'Colombia', 'Perú', 'Argentina', 'Costa Rica', 'Ecuador', 'Panamá', 'Brasil'];
-const TYPES = ['Regulatoria', 'Informativa'];
+const TYPES = [
+    { value: 'Regulatoria', label: 'Regulatoria', color: '#dc2626', bg: '#fef2f2' },
+    { value: 'Informativa', label: 'Informativa', color: '#0369a1', bg: '#e0f2fe' }
+];
 const SUBJECTS = ['Bancario', 'Fintech', 'Seguros', 'Valores', 'General', 'Ciberseguridad', 'Datos Personales', 'AML/PLD'];
 const INSTANCES = ['Legislativo', 'Ejecutivo', 'Judicial', 'Organismos Autónomos', 'Internacional'];
+
+// Reusable form field component
+function FormField({
+    label,
+    icon: Icon,
+    required = false,
+    children,
+    hint
+}: {
+    label: string;
+    icon?: React.ElementType;
+    required?: boolean;
+    children: React.ReactNode;
+    hint?: string;
+}) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: 'var(--font-size-sm)',
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+            }}>
+                {Icon && <Icon size={14} style={{ color: 'var(--text-secondary)' }} />}
+                {label}
+                {required && <span style={{ color: 'var(--red-accent)' }}>*</span>}
+            </label>
+            {children}
+            {hint && (
+                <span style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                }}>
+                    {hint}
+                </span>
+            )}
+        </div>
+    );
+}
 
 export default function AlertRegistrationModal({ change, onClose, onSuccess }: AlertRegistrationModalProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState(false);
 
     // Form State - prefill from change data where available
     const [email, setEmail] = useState('');
@@ -26,7 +85,6 @@ export default function AlertRegistrationModal({ change, onClose, onSuccess }: A
     const [count, setCount] = useState(1);
     const [type, setType] = useState('Regulatoria');
     const [subject, setSubject] = useState('');
-    // Prefill topic from headline if available
     const [topic, setTopic] = useState(change.headline || '');
     const [instance, setInstance] = useState('Organismos Autónomos');
     const [legislativeBody, setLegislativeBody] = useState('');
@@ -45,6 +103,8 @@ export default function AlertRegistrationModal({ change, onClose, onSuccess }: A
 
         try {
             if (!email) throw new Error('El email es obligatorio');
+            if (!subject) throw new Error('La materia es obligatoria');
+            if (!topic) throw new Error('El ámbito/tema es obligatorio');
 
             const payload: AlertDispatch = {
                 change_id: change.id,
@@ -65,13 +125,39 @@ export default function AlertRegistrationModal({ change, onClose, onSuccess }: A
             // Save preference
             localStorage.setItem('alert_dispatch_email', email);
 
-            onSuccess();
-            onClose();
+            setSuccess(true);
+            setTimeout(() => {
+                onSuccess();
+                onClose();
+            }, 1000);
         } catch (err: any) {
             setError(err.message || 'Error al registrar alerta');
         } finally {
             setLoading(false);
         }
+    };
+
+    const inputStyle: React.CSSProperties = {
+        width: '100%',
+        padding: '10px 12px',
+        fontSize: 'var(--font-size-base)',
+        fontFamily: 'var(--font-family)',
+        color: 'var(--text-primary)',
+        backgroundColor: 'var(--background)',
+        border: '1px solid var(--border-light)',
+        borderRadius: 'var(--radius-md)',
+        transition: 'all 200ms ease',
+        minHeight: '42px',
+    };
+
+    const selectStyle: React.CSSProperties = {
+        ...inputStyle,
+        cursor: 'pointer',
+        appearance: 'none',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23717182' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 12px center',
+        paddingRight: '36px',
     };
 
     return (
@@ -85,198 +171,405 @@ export default function AlertRegistrationModal({ change, onClose, onSuccess }: A
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                    backdropFilter: 'blur(4px)',
                     zIndex: 100,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '1rem',
+                    padding: 'var(--spacing-4)',
+                    animation: 'fadeIn 200ms ease-out',
                 }}
             >
                 <div
                     onClick={(e) => e.stopPropagation()}
+                    className="slide-in-down"
                     style={{
-                        backgroundColor: 'white',
-                        borderRadius: '0.5rem',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                        backgroundColor: 'var(--card)',
+                        borderRadius: 'var(--radius-xl)',
+                        boxShadow: 'var(--shadow-lg)',
                         width: '100%',
-                        maxWidth: '42rem',
+                        maxWidth: '580px',
                         maxHeight: '90vh',
-                        overflowY: 'auto',
                         display: 'flex',
                         flexDirection: 'column',
+                        overflow: 'hidden',
                     }}
                 >
-
                     {/* Header */}
-                    <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
-                        <h2 className="text-lg font-semibold text-gray-800">Registrar Alerta</h2>
-                        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+                    <div style={{
+                        padding: 'var(--spacing-5)',
+                        borderBottom: '1px solid var(--border-light)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        backgroundColor: 'var(--gray-50)',
+                    }}>
+                        <div>
+                            <h2 style={{
+                                margin: 0,
+                                fontSize: 'var(--font-size-lg)',
+                                fontWeight: 600,
+                                color: 'var(--blue-night)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                            }}>
+                                <Send size={20} />
+                                Registrar Alerta
+                            </h2>
+                            <p style={{
+                                margin: '4px 0 0 0',
+                                fontSize: 'var(--font-size-sm)',
+                                color: 'var(--text-secondary)',
+                                maxWidth: '400px',
+                            }}>
+                                {change.title ? (
+                                    <>Registrando alerta para: <strong style={{ color: 'var(--text-primary)' }}>{change.title.substring(0, 60)}{change.title.length > 60 ? '...' : ''}</strong></>
+                                ) : (
+                                    'Completa los datos para registrar la alerta'
+                                )}
+                            </p>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="btn-ghost"
+                            style={{
+                                padding: '8px',
+                                borderRadius: 'var(--radius-md)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}
+                        >
                             <X size={20} />
                         </button>
                     </div>
 
-                    {/* Body */}
-                    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-
-                        {error && (
-                            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm flex items-center gap-2">
-                                <AlertCircle size={16} />
-                                {error}
+                    {/* Success State */}
+                    {success ? (
+                        <div style={{
+                            padding: 'var(--spacing-8)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 'var(--spacing-4)',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{
+                                width: '64px',
+                                height: '64px',
+                                borderRadius: '50%',
+                                backgroundColor: '#d1fae5',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}>
+                                <CheckCircle2 size={32} style={{ color: '#059669' }} />
                             </div>
-                        )}
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Email */}
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Email Responsable *</label>
-                                <input
-                                    type="email"
-                                    required
-                                    className="w-full border rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={email}
-                                    onChange={e => setEmail(e.target.value)}
-                                    placeholder="nombre@asertiva.it"
-                                />
-                            </div>
-
-                            {/* Date */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
-                                <input
-                                    type="date"
-                                    required
-                                    className="w-full border rounded-md p-2"
-                                    value={date}
-                                    onChange={e => setDate(e.target.value)}
-                                />
+                                <h3 style={{ margin: 0, color: '#059669', fontSize: 'var(--font-size-lg)' }}>
+                                    Alerta Registrada
+                                </h3>
+                                <p style={{ margin: '8px 0 0', color: 'var(--text-secondary)' }}>
+                                    La alerta ha sido registrada exitosamente
+                                </p>
                             </div>
+                        </div>
+                    ) : (
+                        /* Form */
+                        <form onSubmit={handleSubmit} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            flex: 1,
+                            overflow: 'hidden',
+                        }}>
+                            {/* Scrollable Content */}
+                            <div style={{
+                                flex: 1,
+                                overflowY: 'auto',
+                                padding: 'var(--spacing-5)',
+                            }}>
+                                {/* Error Message */}
+                                {error && (
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        padding: '12px',
+                                        backgroundColor: '#fef2f2',
+                                        border: '1px solid #fecaca',
+                                        borderRadius: 'var(--radius-md)',
+                                        color: '#dc2626',
+                                        fontSize: 'var(--font-size-sm)',
+                                        marginBottom: 'var(--spacing-4)',
+                                    }}>
+                                        <AlertCircle size={16} />
+                                        {error}
+                                    </div>
+                                )}
 
-                            {/* Country */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">País / Estado *</label>
-                                <select
-                                    className="w-full border rounded-md p-2"
-                                    value={country}
-                                    onChange={e => setCountry(e.target.value)}
-                                >
-                                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-
-                            {/* # Alerts */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Número de Alertas *</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    required
-                                    className="w-full border rounded-md p-2"
-                                    value={count}
-                                    onChange={e => setCount(parseInt(e.target.value))}
-                                />
-                            </div>
-
-                            {/* Type */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo *</label>
-                                <select
-                                    className="w-full border rounded-md p-2"
-                                    value={type}
-                                    onChange={e => setType(e.target.value)}
-                                >
-                                    {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </div>
-
-                            {/* Instance */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Instancia *</label>
-                                <select
-                                    className="w-full border rounded-md p-2"
-                                    value={instance}
-                                    onChange={e => setInstance(e.target.value)}
-                                >
-                                    {INSTANCES.map(i => <option key={i} value={i}>{i}</option>)}
-                                </select>
-                            </div>
-
-                            {/* Legislative Body (Conditional) */}
-                            {instance === 'Legislativo' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Corporación Legislativa *</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full border rounded-md p-2"
-                                        placeholder="ej. Senado, Cámara..."
-                                        value={legislativeBody}
-                                        onChange={e => setLegislativeBody(e.target.value)}
-                                    />
+                                {/* Section: Responsable */}
+                                <div style={{ marginBottom: 'var(--spacing-5)' }}>
+                                    <h4 style={{
+                                        margin: '0 0 var(--spacing-3) 0',
+                                        fontSize: 'var(--font-size-sm)',
+                                        fontWeight: 600,
+                                        color: 'var(--text-secondary)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Responsable
+                                    </h4>
+                                    <FormField label="Email" icon={Mail} required hint="Se guardará para futuros registros">
+                                        <input
+                                            type="email"
+                                            required
+                                            style={inputStyle}
+                                            value={email}
+                                            onChange={e => setEmail(e.target.value)}
+                                            placeholder="nombre@asertiva.it"
+                                        />
+                                    </FormField>
                                 </div>
-                            )}
 
-                            {/* Subject */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Materia *</label>
-                                <select
-                                    className="w-full border rounded-md p-2"
-                                    value={subject}
-                                    onChange={e => setSubject(e.target.value)}
-                                    required
+                                {/* Section: Detalles de la Alerta */}
+                                <div style={{ marginBottom: 'var(--spacing-5)' }}>
+                                    <h4 style={{
+                                        margin: '0 0 var(--spacing-3) 0',
+                                        fontSize: 'var(--font-size-sm)',
+                                        fontWeight: 600,
+                                        color: 'var(--text-secondary)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Detalles de la Alerta
+                                    </h4>
+
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(2, 1fr)',
+                                        gap: 'var(--spacing-4)',
+                                    }}>
+                                        <FormField label="Fecha" icon={Calendar} required>
+                                            <input
+                                                type="date"
+                                                required
+                                                style={inputStyle}
+                                                value={date}
+                                                onChange={e => setDate(e.target.value)}
+                                            />
+                                        </FormField>
+
+                                        <FormField label="País / Estado" icon={MapPin} required>
+                                            <select
+                                                style={selectStyle}
+                                                value={country}
+                                                onChange={e => setCountry(e.target.value)}
+                                            >
+                                                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </FormField>
+
+                                        <FormField label="Número de Alertas" icon={Hash} required>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                required
+                                                style={inputStyle}
+                                                value={count}
+                                                onChange={e => setCount(parseInt(e.target.value) || 1)}
+                                            />
+                                        </FormField>
+
+                                        <FormField label="Tipo" icon={FileText} required>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                {TYPES.map(t => (
+                                                    <button
+                                                        key={t.value}
+                                                        type="button"
+                                                        onClick={() => setType(t.value)}
+                                                        style={{
+                                                            flex: 1,
+                                                            padding: '10px 12px',
+                                                            fontSize: 'var(--font-size-sm)',
+                                                            fontWeight: 500,
+                                                            borderRadius: 'var(--radius-md)',
+                                                            border: type === t.value ? `2px solid ${t.color}` : '1px solid var(--border-light)',
+                                                            backgroundColor: type === t.value ? t.bg : 'var(--background)',
+                                                            color: type === t.value ? t.color : 'var(--text-secondary)',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 150ms ease',
+                                                        }}
+                                                    >
+                                                        {t.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </FormField>
+                                    </div>
+                                </div>
+
+                                {/* Section: Clasificación */}
+                                <div style={{ marginBottom: 'var(--spacing-5)' }}>
+                                    <h4 style={{
+                                        margin: '0 0 var(--spacing-3) 0',
+                                        fontSize: 'var(--font-size-sm)',
+                                        fontWeight: 600,
+                                        color: 'var(--text-secondary)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Clasificación
+                                    </h4>
+
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(2, 1fr)',
+                                        gap: 'var(--spacing-4)',
+                                    }}>
+                                        <FormField label="Instancia" icon={Building2} required>
+                                            <select
+                                                style={selectStyle}
+                                                value={instance}
+                                                onChange={e => setInstance(e.target.value)}
+                                            >
+                                                {INSTANCES.map(i => <option key={i} value={i}>{i}</option>)}
+                                            </select>
+                                        </FormField>
+
+                                        <FormField label="Materia" icon={Bookmark} required>
+                                            <select
+                                                style={selectStyle}
+                                                value={subject}
+                                                onChange={e => setSubject(e.target.value)}
+                                                required
+                                            >
+                                                <option value="">Seleccionar...</option>
+                                                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </FormField>
+
+                                        {instance === 'Legislativo' && (
+                                            <FormField label="Corporación Legislativa" icon={Scale} required>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    style={inputStyle}
+                                                    placeholder="ej. Senado, Cámara..."
+                                                    value={legislativeBody}
+                                                    onChange={e => setLegislativeBody(e.target.value)}
+                                                />
+                                            </FormField>
+                                        )}
+
+                                        <div style={{ gridColumn: instance === 'Legislativo' ? '2' : '1 / -1' }}>
+                                            <FormField label="Ámbito / Tema" icon={FileText} required>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    style={inputStyle}
+                                                    placeholder="Resumen del tema regulatorio..."
+                                                    value={topic}
+                                                    onChange={e => setTopic(e.target.value)}
+                                                />
+                                            </FormField>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: Información Adicional */}
+                                <div>
+                                    <h4 style={{
+                                        margin: '0 0 var(--spacing-3) 0',
+                                        fontSize: 'var(--font-size-sm)',
+                                        fontWeight: 600,
+                                        color: 'var(--text-secondary)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                    }}>
+                                        Información Adicional
+                                    </h4>
+
+                                    <FormField label="Clientes Afectados" icon={Users} hint="Nombres de clientes separados por comas">
+                                        <textarea
+                                            style={{
+                                                ...inputStyle,
+                                                minHeight: '80px',
+                                                resize: 'vertical',
+                                            }}
+                                            placeholder="Ej: Banco Nacional, Fintech SA, Seguros XYZ..."
+                                            value={clients}
+                                            onChange={e => setClients(e.target.value)}
+                                        />
+                                    </FormField>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{
+                                padding: 'var(--spacing-4) var(--spacing-5)',
+                                borderTop: '1px solid var(--border-light)',
+                                backgroundColor: 'var(--gray-50)',
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                gap: 'var(--spacing-3)',
+                            }}>
+                                <button
+                                    type="button"
+                                    onClick={onClose}
+                                    disabled={loading}
+                                    className="btn btn-ghost"
+                                    style={{
+                                        padding: '10px 20px',
+                                        border: '1px solid var(--border-light)',
+                                    }}
                                 >
-                                    <option value="">Seleccionar...</option>
-                                    {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="btn btn-primary"
+                                    style={{
+                                        padding: '10px 24px',
+                                        opacity: loading ? 0.7 : 1,
+                                    }}
+                                >
+                                    {loading ? (
+                                        <>
+                                            <span style={{
+                                                width: '16px',
+                                                height: '16px',
+                                                border: '2px solid transparent',
+                                                borderTopColor: 'white',
+                                                borderRadius: '50%',
+                                                animation: 'spin 0.8s linear infinite',
+                                            }} />
+                                            Guardando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send size={16} />
+                                            Registrar Alerta
+                                        </>
+                                    )}
+                                </button>
                             </div>
-
-                            {/* Topic */}
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Ámbito / Tema *</label>
-                                <input
-                                    type="text"
-                                    required
-                                    className="w-full border rounded-md p-2"
-                                    placeholder="Resumen del tema..."
-                                    value={topic}
-                                    onChange={e => setTopic(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Clients */}
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Clientes (Opcional)</label>
-                                <textarea
-                                    className="w-full border rounded-md p-2 h-20"
-                                    placeholder="Nombres de clientes separados por comas..."
-                                    value={clients}
-                                    onChange={e => setClients(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="pt-4 border-t flex justify-end gap-3" style={{ position: 'sticky', bottom: 0, backgroundColor: 'white' }}>
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
-                                disabled={loading}
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="submit"
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
-                                disabled={loading}
-                            >
-                                <Save size={16} />
-                                {loading ? 'Guardando...' : 'Registrar Alerta'}
-                            </button>
-                        </div>
-                    </form>
+                        </form>
+                    )}
                 </div>
             </div>
+
+            {/* Spinner animation */}
+            <style>{`
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </>
     );
 }
