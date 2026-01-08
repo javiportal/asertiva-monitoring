@@ -8,6 +8,7 @@ import EmailInbox from "./components/EmailInbox";
 import AlertHistoryList from "./components/AlertHistoryList";
 import DetailPanel from "./components/DetailPanel";
 import Toast from "./components/Toast";
+import WatchGuardScheduler from "./components/WatchGuardScheduler";
 import { type Change } from "./components/ChangesTable";
 import useChanges from "./hooks/useChanges";
 
@@ -244,6 +245,11 @@ function App() {
           selectedCountry={selectedCountry}
           onSelectCountry={setSelectedCountry}
           onClearFilters={handleClearFilters}
+        />
+
+        {/* WatchGuard Scheduler Control Panel */}
+        <WatchGuardScheduler
+          onToast={(message, type) => showToast(message, type)}
         />
 
         {/* Two Column Layout */}
