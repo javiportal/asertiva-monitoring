@@ -2,9 +2,13 @@
 WatchGuard CLI - Command line interface.
 
 Usage:
-    python -m watchguard.cli run           # Run all configured monitors
-    python -m watchguard.cli fetch <url>   # Fetch single URL (for testing)
-    python -m watchguard.cli status        # Show status of all monitors
+    python -m watchguard.cli run              # Run all configured monitors
+    python -m watchguard.cli fetch <url>      # Fetch single URL (for testing)
+    python -m watchguard.cli status           # Show status of all monitors
+    python -m watchguard.cli scheduler        # Start the scheduler daemon
+    python -m watchguard.cli scheduler-status # Show scheduler config from API
+    python -m watchguard.cli trigger          # Trigger immediate scheduler run
+    python -m watchguard.cli test-api         # Test API connectivity
 """
 
 import sys
@@ -193,23 +197,138 @@ def test_api(ctx):
     """Test connection to the RiskMonitor API."""
     import httpx
     from .config import get_config
-    
+
     config = get_config()
     api_url = config.settings.api_url
-    
+
     click.echo(f"🔗 Testing connection to: {api_url}")
-    
+
     try:
         with httpx.Client(timeout=10) as client:
             # Try health endpoint first
             response = client.get(f"{api_url}/health")
-            
+
             if response.status_code == 200:
                 click.echo("✅ API is reachable")
                 click.echo(f"   Response: {response.json()}")
             else:
                 click.echo(f"⚠️  API returned status {response.status_code}")
-                
+
+    except httpx.ConnectError:
+        click.echo("❌ Could not connect to API")
+        click.echo(f"   Make sure the API is running at {api_url}")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--api-url", "-a", type=str, help="Override API URL from config")
+@click.pass_context
+def scheduler(ctx, api_url):
+    """Start the scheduler daemon for periodic monitoring.
+
+    The scheduler will:
+    - Fetch configuration from the API on startup
+    - Run monitoring at the configured interval_hours
+    - Respect the active hours window (start_hour to end_hour)
+    - Support immediate triggers via the API
+
+    Configuration is read from the API at:
+    GET /watchguard/scheduler/status
+
+    After each run, it calls:
+    POST /watchguard/scheduler/mark-run
+    """
+    from .scheduler import run_scheduler
+    from .config import get_config
+
+    if api_url is None:
+        config = get_config()
+        api_url = config.settings.api_url
+
+    click.echo("🚀 Starting WatchGuard Scheduler Daemon")
+    click.echo(f"   API URL: {api_url}")
+    click.echo()
+    click.echo("Press Ctrl+C to stop")
+    click.echo("=" * 60)
+    click.echo()
+
+    try:
+        run_scheduler(api_url=api_url)
+    except KeyboardInterrupt:
+        click.echo()
+        click.echo("👋 Scheduler stopped")
+
+
+@cli.command("scheduler-status")
+@click.pass_context
+def scheduler_status(ctx):
+    """Show current scheduler configuration from API."""
+    import httpx
+    from .config import get_config
+
+    config = get_config()
+    api_url = config.settings.api_url
+    url = f"{api_url}/watchguard/scheduler/status"
+
+    click.echo(f"📊 Fetching scheduler status from: {url}")
+    click.echo()
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(url)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                enabled_icon = "✅" if data["enabled"] else "❌"
+                click.echo(f"Enabled:        {enabled_icon} {data['enabled']}")
+                click.echo(f"Active hours:   {data['start_hour']:02d}:00 - {data['end_hour']:02d}:00")
+                click.echo(f"Interval:       Every {data['interval_hours']} hour(s)")
+                click.echo(f"Last run:       {data['last_run'] or 'Never'}")
+                click.echo(f"Next scheduled: {data['next_scheduled_run'] or 'N/A'}")
+                click.echo(f"Trigger pending: {'Yes' if data.get('trigger_pending') else 'No'}")
+            else:
+                click.echo(f"⚠️  API returned status {response.status_code}")
+                if response.status_code == 500:
+                    click.echo("   Migration 005 may not be applied yet.")
+                sys.exit(1)
+
+    except httpx.ConnectError:
+        click.echo("❌ Could not connect to API")
+        click.echo(f"   Make sure the API is running at {api_url}")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}")
+        sys.exit(1)
+
+
+@cli.command("trigger")
+@click.pass_context
+def trigger_run(ctx):
+    """Trigger an immediate scheduler run via API."""
+    import httpx
+    from .config import get_config
+
+    config = get_config()
+    api_url = config.settings.api_url
+    url = f"{api_url}/watchguard/scheduler/trigger"
+
+    click.echo(f"🔔 Triggering immediate run...")
+
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.post(url)
+
+            if response.status_code == 200:
+                data = response.json()
+                click.echo(f"✅ {data['message']}")
+            else:
+                click.echo(f"⚠️  API returned status {response.status_code}")
+                sys.exit(1)
+
     except httpx.ConnectError:
         click.echo("❌ Could not connect to API")
         click.echo(f"   Make sure the API is running at {api_url}")

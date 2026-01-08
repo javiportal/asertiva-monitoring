@@ -819,6 +819,323 @@ def ingest_change(
         raise HTTPException(status_code=500, detail=f"Error ingesting change: {str(e)}")
 
 
+# ---------- WatchGuard Scheduler Control ----------
+
+
+class SchedulerStatusResponse(BaseModel):
+    """Response for scheduler status endpoint."""
+    enabled: bool
+    start_hour: int
+    end_hour: int
+    interval_hours: int
+    last_run: Optional[datetime] = None
+    next_scheduled_run: Optional[datetime] = None
+    trigger_pending: bool = False
+
+
+class SchedulerToggleRequest(BaseModel):
+    """Request to toggle scheduler enabled state."""
+    enabled: bool
+
+
+class SchedulerConfigRequest(BaseModel):
+    """Request to update scheduler configuration."""
+    start_hour: Optional[int] = Field(default=None, ge=0, le=23)
+    end_hour: Optional[int] = Field(default=None, ge=0, le=23)
+    interval_hours: Optional[int] = Field(default=None, ge=1, le=24)
+
+
+class SchedulerUpdateResponse(BaseModel):
+    """Response for scheduler update operations."""
+    ok: bool
+    message: str
+
+
+class SchedulerTriggerResponse(BaseModel):
+    """Response for scheduler trigger endpoint."""
+    ok: bool
+    message: str
+    trigger_pending: bool
+
+
+def calculate_next_scheduled_run(
+    enabled: bool,
+    start_hour: int,
+    end_hour: int,
+    interval_hours: int,
+    last_run: Optional[datetime],
+) -> Optional[datetime]:
+    """
+    Calculate the next scheduled run time based on scheduler config.
+
+    Rules:
+    - If disabled, return None
+    - If within active window (start_hour <= current_hour < end_hour):
+      - Next run is last_run + interval_hours, or now if no last_run
+      - If calculated time is past end_hour, next run is tomorrow at start_hour
+    - If outside active window:
+      - If before start_hour today, next run is today at start_hour
+      - If after end_hour today, next run is tomorrow at start_hour
+    """
+    if not enabled:
+        return None
+
+    now = datetime.utcnow()
+    current_hour = now.hour
+
+    # Create today's start and end times
+    today_start = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+    today_end = now.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+
+    # Check if we're within the active window
+    in_window = start_hour <= current_hour < end_hour
+
+    if in_window:
+        if last_run is None:
+            # No previous run, schedule for now
+            return now
+
+        # Calculate next run based on interval
+        next_run = last_run + timedelta(hours=interval_hours)
+
+        # If next run is in the past, schedule for now
+        if next_run <= now:
+            return now
+
+        # If next run is past today's end hour, schedule for tomorrow
+        if next_run.hour >= end_hour or next_run.date() > now.date():
+            return tomorrow_start
+
+        return next_run
+    else:
+        # Outside active window
+        if current_hour < start_hour:
+            # Before start_hour today, schedule for today's start
+            return today_start
+        else:
+            # After end_hour today, schedule for tomorrow's start
+            return tomorrow_start
+
+
+def get_scheduler_config(db: Session) -> dict:
+    """
+    Get scheduler configuration from database.
+    Returns default values if table doesn't exist or is empty.
+    """
+    try:
+        result = db.execute(
+            text("""
+                SELECT enabled, start_hour, end_hour, interval_hours, last_run, trigger_now
+                FROM watchguard_scheduler_config
+                LIMIT 1
+            """)
+        ).mappings().first()
+
+        if result:
+            return dict(result)
+
+        # Return defaults if no config exists
+        return {
+            "enabled": True,
+            "start_hour": 7,
+            "end_hour": 17,
+            "interval_hours": 3,
+            "last_run": None,
+            "trigger_now": False,
+        }
+    except Exception as e:
+        logger.warning("Could not read scheduler config (migration 005 may not be applied): %s", e)
+        return {
+            "enabled": True,
+            "start_hour": 7,
+            "end_hour": 17,
+            "interval_hours": 3,
+            "last_run": None,
+            "trigger_now": False,
+        }
+
+
+@app.get("/watchguard/scheduler/status", response_model=SchedulerStatusResponse)
+def get_scheduler_status(db: Session = Depends(get_db)):
+    """
+    Get current scheduler status and configuration.
+    Includes calculated next_scheduled_run based on config.
+    """
+    config = get_scheduler_config(db)
+
+    next_run = calculate_next_scheduled_run(
+        enabled=config["enabled"],
+        start_hour=config["start_hour"],
+        end_hour=config["end_hour"],
+        interval_hours=config["interval_hours"],
+        last_run=config["last_run"],
+    )
+
+    return SchedulerStatusResponse(
+        enabled=config["enabled"],
+        start_hour=config["start_hour"],
+        end_hour=config["end_hour"],
+        interval_hours=config["interval_hours"],
+        last_run=config["last_run"],
+        next_scheduled_run=next_run,
+        trigger_pending=config["trigger_now"],
+    )
+
+
+@app.post("/watchguard/scheduler/toggle", response_model=SchedulerUpdateResponse)
+def toggle_scheduler(payload: SchedulerToggleRequest, db: Session = Depends(get_db)):
+    """
+    Enable or disable the WatchGuard scheduler.
+    """
+    try:
+        result = db.execute(
+            text("""
+                UPDATE watchguard_scheduler_config
+                SET enabled = :enabled, updated_at = NOW(), updated_by = 'api'
+                WHERE id = (SELECT id FROM watchguard_scheduler_config LIMIT 1)
+            """),
+            {"enabled": payload.enabled}
+        )
+
+        if result.rowcount == 0:
+            # No config row exists, insert one
+            db.execute(
+                text("""
+                    INSERT INTO watchguard_scheduler_config (enabled, updated_by)
+                    VALUES (:enabled, 'api')
+                """),
+                {"enabled": payload.enabled}
+            )
+
+        db.commit()
+
+        status = "enabled" if payload.enabled else "disabled"
+        return SchedulerUpdateResponse(ok=True, message=f"Scheduler {status}")
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error toggling scheduler")
+        raise HTTPException(status_code=500, detail=f"Error updating scheduler: {str(e)}")
+
+
+@app.post("/watchguard/scheduler/config", response_model=SchedulerUpdateResponse)
+def update_scheduler_config(payload: SchedulerConfigRequest, db: Session = Depends(get_db)):
+    """
+    Update scheduler configuration (start_hour, end_hour, interval_hours).
+    Only provided fields are updated.
+    """
+    updates = []
+    params: dict[str, Any] = {}
+
+    if payload.start_hour is not None:
+        updates.append("start_hour = :start_hour")
+        params["start_hour"] = payload.start_hour
+
+    if payload.end_hour is not None:
+        updates.append("end_hour = :end_hour")
+        params["end_hour"] = payload.end_hour
+
+    if payload.interval_hours is not None:
+        updates.append("interval_hours = :interval_hours")
+        params["interval_hours"] = payload.interval_hours
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No configuration fields provided")
+
+    # Validate start_hour < end_hour if both are provided or being updated
+    config = get_scheduler_config(db)
+    new_start = payload.start_hour if payload.start_hour is not None else config["start_hour"]
+    new_end = payload.end_hour if payload.end_hour is not None else config["end_hour"]
+
+    if new_start >= new_end:
+        raise HTTPException(status_code=400, detail="start_hour must be less than end_hour")
+
+    updates.append("updated_at = NOW()")
+    updates.append("updated_by = 'api'")
+
+    try:
+        result = db.execute(
+            text(f"""
+                UPDATE watchguard_scheduler_config
+                SET {', '.join(updates)}
+                WHERE id = (SELECT id FROM watchguard_scheduler_config LIMIT 1)
+            """),
+            params
+        )
+
+        if result.rowcount == 0:
+            raise HTTPException(
+                status_code=500,
+                detail="No scheduler config found. Run migration 005."
+            )
+
+        db.commit()
+        return SchedulerUpdateResponse(ok=True, message="Scheduler configuration updated")
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error updating scheduler config")
+        raise HTTPException(status_code=500, detail=f"Error updating config: {str(e)}")
+
+
+@app.post("/watchguard/scheduler/trigger", response_model=SchedulerTriggerResponse)
+def trigger_scheduler(db: Session = Depends(get_db)):
+    """
+    Trigger an immediate scheduler run.
+    Sets trigger_now flag that WatchGuard service checks.
+    """
+    try:
+        result = db.execute(
+            text("""
+                UPDATE watchguard_scheduler_config
+                SET trigger_now = TRUE, updated_at = NOW(), updated_by = 'api_trigger'
+                WHERE id = (SELECT id FROM watchguard_scheduler_config LIMIT 1)
+            """)
+        )
+
+        if result.rowcount == 0:
+            raise HTTPException(
+                status_code=500,
+                detail="No scheduler config found. Run migration 005."
+            )
+
+        db.commit()
+        return SchedulerTriggerResponse(
+            ok=True,
+            message="Immediate run triggered. WatchGuard will process on next check.",
+            trigger_pending=True,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error triggering scheduler")
+        raise HTTPException(status_code=500, detail=f"Error triggering scheduler: {str(e)}")
+
+
+@app.post("/watchguard/scheduler/mark-run", response_model=SchedulerUpdateResponse)
+def mark_scheduler_run(db: Session = Depends(get_db)):
+    """
+    Mark that a scheduler run completed (called by WatchGuard service).
+    Updates last_run and clears trigger_now flag.
+    """
+    try:
+        db.execute(
+            text("""
+                UPDATE watchguard_scheduler_config
+                SET last_run = NOW(), trigger_now = FALSE, updated_at = NOW(), updated_by = 'watchguard'
+                WHERE id = (SELECT id FROM watchguard_scheduler_config LIMIT 1)
+            """)
+        )
+        db.commit()
+        return SchedulerUpdateResponse(ok=True, message="Run marked complete")
+    except Exception as e:
+        db.rollback()
+        logger.exception("Error marking scheduler run")
+        raise HTTPException(status_code=500, detail=f"Error marking run: {str(e)}")
+
+
 # ---------- Alert Dispatch System ----------
 
 

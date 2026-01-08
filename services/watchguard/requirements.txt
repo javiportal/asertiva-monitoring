@@ -20,6 +20,9 @@ structlog>=24.0.0
 # Retry logic
 tenacity>=8.2.0
 
+# Scheduler
+apscheduler>=3.10.0
+
 # Phase 2: Playwright (uncomment when needed)
 # playwright>=1.40.0
 
